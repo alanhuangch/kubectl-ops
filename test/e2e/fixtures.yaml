@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubectl-ops-e2e
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: node-reader
+  namespace: kubectl-ops-e2e
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubectl-ops-e2e-node-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubectl-ops-e2e-node-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubectl-ops-e2e-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: node-reader
+    namespace: kubectl-ops-e2e
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: recent-pod
+  namespace: kubectl-ops-e2e
+  labels:
+    app.kubernetes.io/name: kubectl-ops-e2e
+spec:
+  restartPolicy: Always
+  nodeSelector:
+    kubectl-ops.dev/e2e: "true"
+  containers:
+    - name: stable
+      image: kubectl-ops-e2e/helper:local
+      imagePullPolicy: Never
+      args: ["stable"]
+      resources:
+        requests:
+          cpu: 250m
+          memory: 64Mi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: restart-pod
+  namespace: kubectl-ops-e2e
+  labels:
+    app.kubernetes.io/name: kubectl-ops-e2e
+spec:
+  restartPolicy: Always
+  nodeSelector:
+    kubectl-ops.dev/e2e: "true"
+  containers:
+    - name: restart-helper
+      image: kubectl-ops-e2e/helper:local
+      imagePullPolicy: Never
+      args: ["restart-once", "/state/restarted"]
+      resources:
+        requests:
+          cpu: 100m
+          memory: 32Mi
+      volumeMounts:
+        - name: state
+          mountPath: /state
+  volumes:
+    - name: state
+      emptyDir: {}
