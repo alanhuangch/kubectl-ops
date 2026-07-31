@@ -1,0 +1,22 @@
+{
+  "capturedAt": "2026-07-30T10:00:00Z",
+  "completeness": "Complete",
+  "items": [
+    {
+      "namespace": "production",
+      "pod": "api-123",
+      "uid": "uid-1",
+      "node": "worker-07",
+      "scheduledAt": "2026-07-30T09:59:48Z",
+      "timeToScheduled": "2.8s",
+      "phase": "Running",
+      "scheduler": "default-scheduler",
+      "static": false
+    }
+  ],
+  "summary": {
+    "returned": 1,
+    "ignoredMissingScheduled": 2,
+    "excludedStatic": 1
+  }
+}

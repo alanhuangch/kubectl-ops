@@ -1,0 +1,21 @@
+SCHEDULER OBSERVED
+CONDITION     STATUS  REASON         TRANSITION  MESSAGE
+PodScheduled  False   Unschedulable  1m ago      0/1 nodes are available
+EVENT             TYPE     COUNT  LAST     MESSAGE
+FailedScheduling  Warning  3      30s ago  0/1 nodes are available
+
+CURRENT-STATE ANALYSIS
+NODES  CODE             CATEGORY
+1      InsufficientCPU  Resources
+
+CLOSEST NODES
+NODE       FAILURES  NON-RESOURCE  RESOURCE-GAP  REASONS
+worker-07  1         0             0.500         InsufficientCPU
+
+TOP CONSUMERS (worker-07/cpu)
+NAMESPACE   POD   REQUEST
+production  busy  3
+
+UNSUPPORTED
+CODE        MESSAGE
+Preemption  preemption is not evaluated

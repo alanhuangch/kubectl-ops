@@ -1,0 +1,2 @@
+NAMESPACE   POD      NODE       SCHEDULED  WAIT  PHASE
+production  api-123  worker-07  12s ago    2.8s  Running

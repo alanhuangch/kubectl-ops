@@ -1,0 +1,72 @@
+{
+  "capturedAt": "2026-07-30T10:00:00Z",
+  "node": "worker-07",
+  "drainability": "Blocked",
+  "completeness": "Complete",
+  "options": {
+    "ignoreDaemonSets": true,
+    "force": true,
+    "deleteEmptyDirData": false
+  },
+  "pods": [
+    {
+      "namespace": "kube-system",
+      "pod": "kube-proxy",
+      "uid": "uid-proxy",
+      "owner": "DaemonSet/kube-proxy",
+      "phase": "Running",
+      "action": "Skip",
+      "impacts": [
+        "DaemonSetManaged"
+      ],
+      "blockers": []
+    },
+    {
+      "namespace": "production",
+      "pod": "api",
+      "uid": "uid-api",
+      "owner": "ReplicaSet/api-rs",
+      "phase": "Running",
+      "action": "Blocked",
+      "impacts": [
+        "LocalStorage",
+        "PDBViolation"
+      ],
+      "blockers": [
+        "LocalStorage",
+        "PDBViolation"
+      ]
+    },
+    {
+      "namespace": "production",
+      "pod": "completed",
+      "uid": "uid-completed",
+      "owner": "Job/batch",
+      "phase": "Failed",
+      "action": "Delete",
+      "impacts": [
+        "TerminalPod"
+      ],
+      "blockers": []
+    }
+  ],
+  "pdbs": [
+    {
+      "namespace": "production",
+      "name": "api",
+      "matchedTargets": 1,
+      "disruptionsAllowed": 0,
+      "unhealthyExempt": 0,
+      "blocked": true,
+      "selectorValid": true
+    }
+  ],
+  "summary": {
+    "pods": 3,
+    "evict": 0,
+    "delete": 1,
+    "skip": 1,
+    "blocked": 1
+  },
+  "warnings": []
+}

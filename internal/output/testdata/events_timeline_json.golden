@@ -1,0 +1,34 @@
+{
+  "capturedAt": "2026-07-30T10:00:00Z",
+  "apiVersion": "events.k8s.io/v1",
+  "completeness": "Complete",
+  "items": [
+    {
+      "namespace": "production",
+      "name": "api.backoff",
+      "uid": "event-uid",
+      "type": "Warning",
+      "reason": "BackOff",
+      "action": "BackOff",
+      "note": "back-off restarting failed container",
+      "reportingController": "kubelet",
+      "reportingInstance": "worker-07",
+      "regarding": {
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "namespace": "production",
+        "name": "api",
+        "uid": "pod-uid"
+      },
+      "related": null,
+      "firstObservedAt": "2026-07-30T09:50:00Z",
+      "lastObservedAt": "2026-07-30T09:59:00Z",
+      "count": 4,
+      "series": true
+    }
+  ],
+  "summary": {
+    "returned": 1,
+    "ignoredMissingTimestamp": 2
+  }
+}

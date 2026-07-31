@@ -1,0 +1,2 @@
+NAMESPACE   POD          CONTAINER  RESTARTS  LAST-REASON  EXIT  FINISHED
+production  payment-123  payment    12        OOMKilled    137   3m ago

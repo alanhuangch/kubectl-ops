@@ -1,0 +1,22 @@
+NAMESPACE   DEPLOYMENT  STATUS    COMPLETENESS  GENERATION  OBSERVED  DESIRED  UPDATED  READY  AVAILABLE  UNAVAILABLE
+production  api         Degraded  Complete      2           2         2        2        1      1          1
+
+CONDITIONS
+TYPE         STATUS  REASON                    TRANSITION  MESSAGE
+Progressing  False   ProgressDeadlineExceeded  1m ago      ReplicaSet api-new has timed out progressing.
+
+REPLICA SETS
+REPLICASET  REVISION  CURRENT  DESIRED  REPLICAS  READY  AVAILABLE
+api-new     2         true     2        2         1      1
+
+PODS
+POD        REPLICASET  PHASE    READY  RESTARTS  REASONS
+api-new-a  api-new     Running  false  3         CrashLoopBackOff
+
+FINDINGS
+SEVERITY  CODE              OBJECT         MESSAGE
+Error     ContainerWaiting  Pod/api-new-a  CrashLoopBackOff
+
+RELATED EVENTS
+TIME     TYPE     OBJECT         REASON   COUNT  SOURCE   MESSAGE
+30s ago  Warning  Pod/api-new-a  BackOff  4      kubelet  back-off restarting failed container

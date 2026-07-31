@@ -1,0 +1,16 @@
+NODE       DRAINABILITY  COMPLETENESS  PODS  EVICT  DELETE  SKIP  BLOCKED
+worker-07  Blocked       Complete      3     0      1       1     1
+
+OPTIONS
+IGNORE-DAEMONSETS  FORCE  DELETE-EMPTYDIR-DATA
+true               true   false
+
+POD IMPACTS
+NAMESPACE    POD         OWNER                 PHASE    ACTION   IMPACTS                    BLOCKERS
+kube-system  kube-proxy  DaemonSet/kube-proxy  Running  Skip     DaemonSetManaged           None
+production   api         ReplicaSet/api-rs     Running  Blocked  LocalStorage,PDBViolation  LocalStorage,PDBViolation
+production   completed   Job/batch             Failed   Delete   TerminalPod                None
+
+PDB IMPACTS
+NAMESPACE   PDB  TARGETS  ALLOWED  UNHEALTHY-EXEMPT  BLOCKED  SELECTOR-VALID
+production  api  1        0        0                 true     true

@@ -1,0 +1,103 @@
+{
+  "capturedAt": "2026-07-30T10:00:00Z",
+  "namespace": "production",
+  "pod": "api",
+  "uid": "uid-1",
+  "phase": "Pending",
+  "scheduler": "default-scheduler",
+  "completeness": "Partial",
+  "observed": {
+    "condition": {
+      "status": "False",
+      "reason": "Unschedulable",
+      "message": "0/1 nodes are available",
+      "lastTransitionTime": "2026-07-30T09:59:00Z"
+    },
+    "events": [
+      {
+        "type": "Warning",
+        "reason": "FailedScheduling",
+        "message": "0/1 nodes are available",
+        "count": 3,
+        "observedAt": "2026-07-30T09:59:30Z"
+      }
+    ]
+  },
+  "currentState": {
+    "source": "CurrentState",
+    "available": true,
+    "summary": [
+      {
+        "code": "InsufficientCPU",
+        "category": "Resources",
+        "count": 1,
+        "nodes": [
+          "worker-07"
+        ]
+      }
+    ],
+    "nodes": [
+      {
+        "node": "worker-07",
+        "hardFailureCount": 1,
+        "nonResourceFailures": 0,
+        "resourceGapScore": 0.5,
+        "limitingResource": "cpu",
+        "failures": [
+          {
+            "code": "InsufficientCPU",
+            "category": "Resources",
+            "source": "CurrentState",
+            "message": "insufficient cpu",
+            "details": {
+              "available": "1",
+              "requested": "2"
+            }
+          }
+        ],
+        "topConsumers": [
+          {
+            "namespace": "production",
+            "pod": "busy",
+            "request": "3"
+          }
+        ]
+      }
+    ],
+    "closestNodes": [
+      {
+        "node": "worker-07",
+        "hardFailureCount": 1,
+        "nonResourceFailures": 0,
+        "resourceGapScore": 0.5,
+        "limitingResource": "cpu",
+        "failures": [
+          {
+            "code": "InsufficientCPU",
+            "category": "Resources",
+            "source": "CurrentState",
+            "message": "insufficient cpu",
+            "details": {
+              "available": "1",
+              "requested": "2"
+            }
+          }
+        ],
+        "topConsumers": [
+          {
+            "namespace": "production",
+            "pod": "busy",
+            "request": "3"
+          }
+        ]
+      }
+    ]
+  },
+  "unsupported": [
+    {
+      "code": "Preemption",
+      "message": "preemption is not evaluated"
+    }
+  ],
+  "warnings": []
+}

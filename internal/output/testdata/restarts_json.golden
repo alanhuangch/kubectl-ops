@@ -1,0 +1,27 @@
+{
+  "capturedAt": "2026-07-30T10:00:00Z",
+  "completeness": "Complete",
+  "items": [
+    {
+      "namespace": "production",
+      "pod": "payment-123",
+      "uid": "uid-1",
+      "node": "worker-07",
+      "container": "payment",
+      "type": "Container",
+      "restarts": 12,
+      "lastReason": "OOMKilled",
+      "classification": "OOMKilled",
+      "exitCode": 137,
+      "signal": 0,
+      "finishedAt": "2026-07-30T09:57:00Z"
+    }
+  ],
+  "summary": {
+    "returned": 1,
+    "ignoredMissingFinishedAt": 2
+  },
+  "limitations": [
+    "Kubernetes Pod status only retains the most recent terminated state for each container."
+  ]
+}

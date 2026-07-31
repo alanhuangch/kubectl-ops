@@ -1,0 +1,78 @@
+{
+  "capturedAt": "2026-07-30T10:00:00Z",
+  "status": "Degraded",
+  "completeness": "Complete",
+  "deployment": {
+    "namespace": "production",
+    "name": "api",
+    "uid": "deployment-uid",
+    "generation": 2,
+    "observedGeneration": 2,
+    "desired": 2,
+    "current": 2,
+    "updated": 2,
+    "ready": 1,
+    "available": 1,
+    "unavailable": 1
+  },
+  "conditions": [
+    {
+      "type": "Progressing",
+      "status": "False",
+      "reason": "ProgressDeadlineExceeded",
+      "message": "ReplicaSet api-new has timed out progressing.",
+      "lastTransitionTime": "2026-07-30T09:59:00Z"
+    }
+  ],
+  "replicaSets": [
+    {
+      "namespace": "production",
+      "name": "api-new",
+      "uid": "rs-new",
+      "revision": 2,
+      "current": true,
+      "desired": 2,
+      "replicas": 2,
+      "ready": 1,
+      "available": 1,
+      "createdAt": "2026-07-30T09:50:00Z"
+    }
+  ],
+  "pods": [
+    {
+      "namespace": "production",
+      "name": "api-new-a",
+      "uid": "pod-a",
+      "replicaSet": "api-new",
+      "node": "worker-07",
+      "phase": "Running",
+      "ready": false,
+      "restarts": 3,
+      "reasons": [
+        "CrashLoopBackOff"
+      ],
+      "createdAt": "2026-07-30T09:51:00Z"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "Error",
+      "code": "ContainerWaiting",
+      "object": "Pod/api-new-a",
+      "message": "CrashLoopBackOff"
+    }
+  ],
+  "events": [
+    {
+      "type": "Warning",
+      "reason": "BackOff",
+      "regardingKind": "Pod",
+      "regardingName": "api-new-a",
+      "note": "back-off restarting failed container",
+      "count": 4,
+      "lastObservedAt": "2026-07-30T09:59:30Z",
+      "reportingController": "kubelet"
+    }
+  ],
+  "warnings": []
+}
