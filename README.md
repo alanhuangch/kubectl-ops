@@ -1,0 +1,77 @@
+# kubectl-ops
+
+`kubectl-ops` is a read-only kubectl plugin for common Kubernetes operational diagnostics.
+
+The first implemented command lists recently scheduled Pods using the
+`PodScheduled=True` condition transition time rather than Pod creation time:
+
+```bash
+kubectl ops pod recent --node worker-07 --since 1h
+kubectl ops pod recent -A -l app=payment -o json
+kubectl ops pod restarts -A --since 1h
+kubectl ops node requests worker-07 --top 10
+kubectl ops node drain-check worker-07 --ignore-daemonsets
+kubectl ops pod pending -n production api-7d8f
+kubectl ops events timeline -A --since 30m
+kubectl ops rollout explain -n production deployment/api
+```
+
+## Development
+
+Requirements: Go 1.26 or newer.
+
+```bash
+make test
+make lint
+make build
+./bin/kubectl-ops --help
+```
+
+Run the kind E2E suite for `pod recent`, `pod restarts`, and `node requests`:
+
+```bash
+make e2e
+```
+
+The target creates a two-node kind cluster, builds and loads a local scratch test image, runs the assertions, and deletes clusters that it created. To keep the cluster for debugging:
+
+```bash
+make e2e E2E_KEEP_CLUSTER=true E2E_KEEP_FIXTURES=true
+```
+
+An existing cluster can be managed and tested separately:
+
+```bash
+make e2e-cluster-create
+make e2e-test
+make e2e-cluster-delete
+```
+
+If Docker is selected through a non-default host or context, pass `E2E_DOCKER_HOST` or `E2E_DOCKER_CONTEXT` to make.
+
+To test it through kubectl, place the built `kubectl-ops` binary on `PATH` and run:
+
+```bash
+kubectl ops --help
+```
+
+## Current scope
+
+- Local single binary; no Controller or CRD.
+- Read-only Kubernetes API access.
+- Stable table, wide, and JSON output for `pod recent`, `pod restarts`, `node requests`, `node drain-check`, `pod pending`, `events timeline`, and `rollout explain`.
+- Deterministic ordering and explicit reporting for omitted Static/Mirror Pods and Pods without a usable scheduling timestamp.
+
+`pod restarts` aggregates regular, init, and ephemeral container statuses. Its time filter uses only the latest terminated state retained in Pod status, so it cannot reconstruct complete restart history.
+
+`node requests` reports scheduling requests rather than live utilization. It includes Init Container rules, restartable Init Containers, Pod overhead, Pod count, and scalar extended resources, and returns partial allocatable-only output when Pod listing is forbidden.
+
+`node drain-check` is a read-only preflight for `kubectl drain`. It classifies Mirror, DaemonSet, unmanaged, terminal, and emptyDir-using Pods; evaluates current PodDisruptionBudget allowances; and simulates `--ignore-daemonsets`, `--force`, and `--delete-emptydir-data`. A PDB permission failure produces partial `Unknown` output instead of claiming the Node is ready.
+
+`pod pending` combines observed `PodScheduled`/`FailedScheduling` data with current-state checks for cordoned Nodes, NodeName, NodeSelector, required NodeAffinity, taints, resources, Pod capacity, extended resources, and HostPort conflicts. Unsupported scheduler semantics are listed explicitly.
+
+`events timeline` presents Event Series as a stable chronological record with first/last timestamps and occurrence counts. It supports namespace, UID, object, reason, type, controller, time, and ordering filters, with a core/v1 fallback when the events.k8s.io API cannot be used.
+
+`rollout explain` correlates a Deployment with its owned ReplicaSets, Pods, conditions, and recent Events. It identifies progress deadline failures, replica failures, unavailable replicas, Pending or unready Pods, container waiting reasons, and restarts. Missing ReplicaSet, Pod, or Event permissions produce partial `Unknown` output.
+
+Future work will extend workload rollout, storage, networking, and deeper Node diagnostics.
