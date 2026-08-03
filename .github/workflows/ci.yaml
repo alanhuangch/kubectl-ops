@@ -4,19 +4,83 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  checks:
+    name: Lint and test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
+      - run: make deps
+      - run: make verify
       - run: make lint
       - run: make test
-      - run: make build
+      - name: Upload coverage
+        if: ${{ always() && hashFiles('coverage.out') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          if-no-files-found: error
+          retention-days: 7
+
+  build:
+    name: Build and install
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build and install binary
+        run: |
+          make install \
+            VERSION="ci-${GITHUB_RUN_NUMBER}" \
+            COMMIT="${GITHUB_SHA::12}" \
+            INSTALL_DIR="${RUNNER_TEMP}/kubectl-ops/bin"
+          "${RUNNER_TEMP}/kubectl-ops/bin/kubectl-ops" version -o json
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubectl-ops-linux-amd64
+          path: bin/kubectl-ops
+          if-no-files-found: error
+          retention-days: 7
+
+  e2e:
+    name: kind E2E
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install kind
+        env:
+          KIND_VERSION: v0.30.0
+        run: go install sigs.k8s.io/kind@"${KIND_VERSION}"
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.35.1
+      - name: Run E2E suite
+        run: make e2e

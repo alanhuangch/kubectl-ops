@@ -25,11 +25,25 @@ kubectl ops rollout explain -n production deployment/api
 Requirements: Go 1.26 or newer.
 
 ```bash
-make test
-make lint
-make build
+make check
 ./bin/kubectl-ops --help
 ```
+
+`make check` downloads and verifies modules, checks module tidiness and formatting,
+runs `go vet`, validates the E2E shell scripts, executes unit tests with race
+detection and coverage, and builds the binary. Individual targets remain
+available as `make deps`, `make verify`, `make lint`, `make test`, and
+`make build`.
+
+Install the compiled kubectl plugin into `GOBIN` (or `GOPATH/bin` when `GOBIN`
+is unset):
+
+```bash
+make install
+kubectl ops version
+```
+
+Use `make install INSTALL_DIR=/custom/bin` to select another destination.
 
 Run the kind E2E suite for `pod recent`, `pod restarts`, and `node requests`:
 
@@ -52,6 +66,10 @@ make e2e-cluster-delete
 ```
 
 If Docker is selected through a non-default host or context, pass `E2E_DOCKER_HOST` or `E2E_DOCKER_CONTEXT` to make.
+
+The GitHub Actions CI runs the same lint, test, build/install, and kind E2E
+targets, and publishes the coverage file and Linux binary as short-lived build
+artifacts.
 
 To test it through kubectl, place the built `kubectl-ops` binary on `PATH` and run:
 

@@ -1,11 +1,30 @@
+SHELL := /bin/bash
+.SHELLFLAGS := -eu -o pipefail -c
+.DEFAULT_GOAL := help
+
 BINARY := kubectl-ops
+GO ?= go
+INSTALL ?= install
+OUTPUT_DIR ?= $(CURDIR)/bin
+COVERAGE_FILE ?= $(CURDIR)/coverage.out
+GO_PACKAGES ?= ./...
+GO_BUILD_FLAGS ?= -trimpath
+GO_TEST_FLAGS ?=
 VERSION ?= dev
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-LDFLAGS := -s -w \
+LDFLAGS = -s -w \
 	-X github.com/alanhuangch/kubectl-ops/internal/command.version=$(VERSION) \
 	-X github.com/alanhuangch/kubectl-ops/internal/command.commit=$(COMMIT) \
 	-X github.com/alanhuangch/kubectl-ops/internal/command.buildDate=$(BUILD_DATE)
+BINARY_PATH := $(OUTPUT_DIR)/$(BINARY)
+
+GOBIN ?= $(shell $(GO) env GOBIN)
+ifeq ($(strip $(GOBIN)),)
+GOBIN := $(shell $(GO) env GOPATH)/bin
+endif
+INSTALL_DIR ?= $(GOBIN)
+DESTDIR ?=
 
 KIND ?= kind
 KUBECTL ?= kubectl
@@ -36,18 +55,48 @@ E2E_ENV = \
 	E2E_DOCKER_HOST="$(E2E_DOCKER_HOST)" \
 	E2E_DOCKER_CONTEXT="$(E2E_DOCKER_CONTEXT)"
 
-.PHONY: build test lint fmt clean e2e e2e-test e2e-cluster-create e2e-cluster-delete e2e-deps
+.PHONY: help deps verify check build install test coverage lint fmt clean \
+	e2e e2e-test e2e-cluster-create e2e-cluster-delete e2e-deps
+
+help:
+	@echo "kubectl-ops development targets:"
+	@echo "  make deps       Download and verify Go modules"
+	@echo "  make verify     Check that go.mod and go.sum are tidy"
+	@echo "  make lint       Run gofmt, go vet, and shell syntax checks"
+	@echo "  make test       Run unit tests with race detection and coverage"
+	@echo "  make build      Build $(BINARY_PATH)"
+	@echo "  make install    Install $(BINARY) into INSTALL_DIR ($(INSTALL_DIR))"
+	@echo "  make check      Run all non-E2E CI checks"
+	@echo "  make e2e        Create a kind cluster, test, and clean it up"
+	@echo "  make e2e-test   Test against an existing E2E kind cluster"
+
+deps:
+	$(GO) mod download
+	$(GO) mod verify
+
+verify:
+	$(GO) mod tidy -diff
+
+check: deps verify lint test build
 
 build:
-	mkdir -p bin
-	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/kubectl-ops
+	mkdir -p "$(OUTPUT_DIR)"
+	$(GO) build $(GO_BUILD_FLAGS) -ldflags "$(LDFLAGS)" -o "$(BINARY_PATH)" ./cmd/kubectl-ops
+
+install: build
+	$(INSTALL) -d "$(DESTDIR)$(INSTALL_DIR)"
+	$(INSTALL) -m 0755 "$(BINARY_PATH)" "$(DESTDIR)$(INSTALL_DIR)/$(BINARY)"
 
 test:
-	go test ./...
+	$(GO) test -race -covermode=atomic -coverprofile="$(COVERAGE_FILE)" $(GO_TEST_FLAGS) $(GO_PACKAGES)
+
+coverage: test
+	$(GO) tool cover -func="$(COVERAGE_FILE)"
 
 lint:
-	go vet ./...
+	$(GO) vet $(GO_PACKAGES)
 	test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './vendor/*'))"
+	bash -n test/e2e/*.sh
 
 fmt:
 	gofmt -w $$(find . -name '*.go' -not -path './vendor/*')
@@ -68,4 +117,4 @@ e2e-deps:
 	@$(E2E_ENV) ./test/e2e/check-deps.sh
 
 clean:
-	rm -f bin/$(BINARY) coverage.out
+	rm -f "$(BINARY_PATH)" "$(COVERAGE_FILE)"
