@@ -1,0 +1,54 @@
+{
+  "capturedAt": "2026-07-30T10:00:00Z",
+  "node": "worker-07",
+  "source": "CurrentState",
+  "completeness": "Complete",
+  "resources": [
+    {
+      "resource": "example.com/fpga",
+      "allocatable": "2",
+      "requested": "1",
+      "available": "1",
+      "ratio": 50
+    },
+    {
+      "resource": "nvidia.com/gpu",
+      "allocatable": "4",
+      "requested": "3",
+      "available": "1",
+      "ratio": 75
+    }
+  ],
+  "topResource": "cpu",
+  "consumers": [],
+  "extendedResourceConsumers": [
+    {
+      "resource": "example.com/fpga",
+      "namespace": "media",
+      "pod": "encoder-0",
+      "uid": "uid-fpga",
+      "request": "1",
+      "owner": "StatefulSet/encoder",
+      "daemonSet": false
+    },
+    {
+      "resource": "nvidia.com/gpu",
+      "namespace": "training",
+      "pod": "model-a",
+      "uid": "uid-gpu-a",
+      "request": "2",
+      "owner": "Job/model-a",
+      "daemonSet": false
+    },
+    {
+      "resource": "nvidia.com/gpu",
+      "namespace": "kube-system",
+      "pod": "gpu-agent",
+      "uid": "uid-gpu-agent",
+      "request": "1",
+      "owner": "DaemonSet/gpu-agent",
+      "daemonSet": true
+    }
+  ],
+  "warnings": []
+}

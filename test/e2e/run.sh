@@ -107,10 +107,18 @@ assert_json "${requests_json}" '.consumers | any(.namespace == "kubectl-ops-e2e"
 assert_json "${requests_json}" '.consumers | any(.namespace == "kubectl-ops-e2e" and .pod == "restart-pod" and .request == "100m")' "restart-pod CPU request"
 assert_json "${requests_json}" '.resources | any(.resource == "cpu" and .requested != null and .available != null and .ratio != null)' "CPU aggregate is available"
 
+pod_resources_json="$("${E2E_BIN}" node requests "${worker_node}" --pods --top 0 -n "${E2E_NAMESPACE}" -o json)"
+assert_json "${pod_resources_json}" '.namespace == "kubectl-ops-e2e" and ([.resources[].available] | all(. == null))' "namespace-scoped node requests"
+assert_json "${pod_resources_json}" '.podResources | any(.namespace == "kubectl-ops-e2e" and .pod == "recent-pod" and (.resources | any(.resource == "cpu" and .request == "250m")) and (.resources | any(.resource == "memory" and .request == "64Mi")))' "recent-pod resource breakdown"
+
+filtered_resources_json="$("${E2E_BIN}" node requests "${worker_node}" -A --resource cpu --only-resource --pods --top 0 -o json)"
+assert_json "${filtered_resources_json}" '(.resources | length == 1 and .[0].resource == "cpu") and (.podResources | all(.resources | length == 1 and .[0].resource == "cpu"))' "single resource filter"
+
 echo "Checking node requests permission degradation..."
-partial_json="$("${E2E_BIN}" node requests "${worker_node}" --as "system:serviceaccount:${E2E_NAMESPACE}:node-reader" -o json)"
+partial_json="$("${E2E_BIN}" node requests "${worker_node}" --pods -n "${E2E_NAMESPACE}" --as "system:serviceaccount:${E2E_NAMESPACE}:node-reader" -o json)"
 assert_json "${partial_json}" '.completeness == "Partial"' "forbidden Pod list produces Partial output"
 assert_json "${partial_json}" '[.resources[].requested] | all(. == null)' "partial resource requests are unknown"
+assert_json "${partial_json}" '.podResources == null' "partial Pod resource breakdown is unknown"
 assert_json "${partial_json}" '.warnings | length > 0' "partial output includes a warning"
 
 echo "kind E2E tests passed."

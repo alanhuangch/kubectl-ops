@@ -10,6 +10,10 @@ kubectl ops pod recent --node worker-07 --since 1h
 kubectl ops pod recent -A -l app=payment -o json
 kubectl ops pod restarts -A --since 1h
 kubectl ops node requests worker-07 --top 10
+kubectl ops node requests worker-07 --extended
+kubectl ops node requests worker-07 --pods
+kubectl ops node requests worker-07 --pods -n production
+kubectl ops node requests worker-07 -A --resource nvidia.com/gpu --only-resource --pods --top 0
 kubectl ops node drain-check worker-07 --ignore-daemonsets
 kubectl ops pod pending -n production api-7d8f
 kubectl ops events timeline -A --since 30m
@@ -64,7 +68,7 @@ kubectl ops --help
 
 `pod restarts` aggregates regular, init, and ephemeral container statuses. Its time filter uses only the latest terminated state retained in Pod status, so it cannot reconstruct complete restart history.
 
-`node requests` reports scheduling requests rather than live utilization. It includes Init Container rules, restartable Init Containers, Pod overhead, Pod count, and scalar extended resources, and returns partial allocatable-only output when Pod listing is forbidden.
+`node requests` reports scheduling requests rather than live utilization. It includes Init Container rules, restartable Init Containers, Pod overhead, Pod count, and scalar extended resources. Use `--extended` to show each active assigned Pod that requests a scalar extended resource, or `--pods` to show every active assigned Pod's effective requests, limits, and request share of Node allocatable capacity across CPU, memory, GPU, and other resource types. Combine an explicit `--resource` with `--only-resource` to keep only that resource in summaries and Pod details; `--pods --top 0` provides the complete matching Pod inventory instead of a Top-N list. By default the command includes every Namespace on the Node; an explicit `-n/--namespace` limits Pod requests and details to that Namespace. Namespace-scoped reports leave `AVAILABLE` unknown because Pods in other Namespaces were not listed. The command returns partial allocatable-only output when Pod listing is forbidden.
 
 `node drain-check` is a read-only preflight for `kubectl drain`. It classifies Mirror, DaemonSet, unmanaged, terminal, and emptyDir-using Pods; evaluates current PodDisruptionBudget allowances; and simulates `--ignore-daemonsets`, `--force`, and `--delete-emptydir-data`. A PDB permission failure produces partial `Unknown` output instead of claiming the Node is ready.
 

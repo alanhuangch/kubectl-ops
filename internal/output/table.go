@@ -116,6 +116,11 @@ func (writer tableWriter) WriteRestarts(out io.Writer, report pod.RestartReport)
 }
 
 func (writer tableWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsReport) error {
+	if report.Namespace != "" {
+		if _, err := fmt.Fprintf(out, "NAMESPACE: %s\n\n", report.Namespace); err != nil {
+			return err
+		}
+	}
 	table := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	if _, err := fmt.Fprintln(table, "RESOURCE\tALLOCATABLE\tREQUESTED\tAVAILABLE\tRATIO"); err != nil {
 		return err
@@ -124,6 +129,8 @@ func (writer tableWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.R
 		requested, available, ratio := "-", "-", "-"
 		if usage.RequestsKnown {
 			requested = usage.Requested.String()
+		}
+		if usage.AvailableKnown {
 			available = usage.Available.String()
 		}
 		if usage.RatioKnown {
@@ -136,33 +143,115 @@ func (writer tableWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.R
 	if err := table.Flush(); err != nil {
 		return err
 	}
-	if len(report.Consumers) == 0 {
-		return nil
-	}
-
-	if _, err := fmt.Fprintf(out, "\nTOP CONSUMERS (%s)\n", report.TopResource); err != nil {
-		return err
-	}
-	consumers := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	if writer.wide {
-		if _, err := fmt.Fprintf(consumers, "NAMESPACE\tPOD\t%s\tOWNER\tDAEMONSET\n", resourceColumnName(report.TopResource)); err != nil {
+	if len(report.Consumers) > 0 {
+		if _, err := fmt.Fprintf(out, "\nTOP CONSUMERS (%s)\n", report.TopResource); err != nil {
 			return err
 		}
-	} else if _, err := fmt.Fprintf(consumers, "NAMESPACE\tPOD\t%s\tOWNER\n", resourceColumnName(report.TopResource)); err != nil {
+		consumers := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+		if writer.wide {
+			if _, err := fmt.Fprintf(consumers, "NAMESPACE\tPOD\t%s\tOWNER\tDAEMONSET\n", resourceColumnName(report.TopResource)); err != nil {
+				return err
+			}
+		} else if _, err := fmt.Fprintf(consumers, "NAMESPACE\tPOD\t%s\tOWNER\n", resourceColumnName(report.TopResource)); err != nil {
+			return err
+		}
+		for _, consumer := range report.Consumers {
+			if writer.wide {
+				if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%s\t%t\n", consumer.Namespace, consumer.Pod, consumer.Request.String(), consumer.Owner, consumer.DaemonSet); err != nil {
+					return err
+				}
+				continue
+			}
+			if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%s\n", consumer.Namespace, consumer.Pod, consumer.Request.String(), consumer.Owner); err != nil {
+				return err
+			}
+		}
+		if err := consumers.Flush(); err != nil {
+			return err
+		}
+	}
+
+	if report.ShowPods {
+		if err := writer.writePodResources(out, report); err != nil {
+			return err
+		}
+	}
+	if !report.ShowExtended {
+		return nil
+	}
+	if _, err := fmt.Fprintln(out, "\nEXTENDED RESOURCE PODS"); err != nil {
 		return err
 	}
-	for _, consumer := range report.Consumers {
+	extended := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	if writer.wide {
+		if _, err := fmt.Fprintln(extended, "RESOURCE\tNAMESPACE\tPOD\tREQUEST\tOWNER\tDAEMONSET"); err != nil {
+			return err
+		}
+	} else if _, err := fmt.Fprintln(extended, "RESOURCE\tNAMESPACE\tPOD\tREQUEST\tOWNER"); err != nil {
+		return err
+	}
+	for _, consumer := range report.ExtendedConsumers {
 		if writer.wide {
-			if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%s\t%t\n", consumer.Namespace, consumer.Pod, consumer.Request.String(), consumer.Owner, consumer.DaemonSet); err != nil {
+			if _, err := fmt.Fprintf(extended, "%s\t%s\t%s\t%s\t%s\t%t\n", consumer.Resource, consumer.Namespace, consumer.Pod, consumer.Request.String(), consumer.Owner, consumer.DaemonSet); err != nil {
 				return err
 			}
 			continue
 		}
-		if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%s\n", consumer.Namespace, consumer.Pod, consumer.Request.String(), consumer.Owner); err != nil {
+		if _, err := fmt.Fprintf(extended, "%s\t%s\t%s\t%s\t%s\n", consumer.Resource, consumer.Namespace, consumer.Pod, consumer.Request.String(), consumer.Owner); err != nil {
 			return err
 		}
 	}
-	return consumers.Flush()
+	return extended.Flush()
+}
+
+func (writer tableWriter) writePodResources(out io.Writer, report nodeanalysis.RequestsReport) error {
+	if _, err := fmt.Fprintln(out, "\nPOD RESOURCES"); err != nil {
+		return err
+	}
+	table := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	if writer.wide {
+		if _, err := fmt.Fprintln(table, "NAMESPACE\tPOD\tUID\tRESOURCE\tREQUEST\tLIMIT\tNODE-RATIO\tOWNER\tDAEMONSET"); err != nil {
+			return err
+		}
+	} else if _, err := fmt.Fprintln(table, "NAMESPACE\tPOD\tRESOURCE\tREQUEST\tLIMIT\tNODE-RATIO\tOWNER"); err != nil {
+		return err
+	}
+	for _, pod := range report.PodResources {
+		if len(pod.Resources) == 0 {
+			if writer.wide {
+				if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t-\t-\t-\t-\t%s\t%t\n", pod.Namespace, pod.Pod, pod.UID, pod.Owner, pod.DaemonSet); err != nil {
+					return err
+				}
+				continue
+			}
+			if _, err := fmt.Fprintf(table, "%s\t%s\t-\t-\t-\t-\t%s\n", pod.Namespace, pod.Pod, pod.Owner); err != nil {
+				return err
+			}
+			continue
+		}
+		for _, resource := range pod.Resources {
+			request, limit, ratio := "-", "-", "-"
+			if resource.RequestSet {
+				request = resource.Request.String()
+			}
+			if resource.LimitSet {
+				limit = resource.Limit.String()
+			}
+			if resource.RatioKnown {
+				ratio = fmt.Sprintf("%.1f%%", resource.RequestRatio)
+			}
+			if writer.wide {
+				if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%t\n", pod.Namespace, pod.Pod, pod.UID, resource.Resource, request, limit, ratio, pod.Owner, pod.DaemonSet); err != nil {
+					return err
+				}
+				continue
+			}
+			if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", pod.Namespace, pod.Pod, resource.Resource, request, limit, ratio, pod.Owner); err != nil {
+				return err
+			}
+		}
+	}
+	return table.Flush()
 }
 
 func resourceColumnName(name corev1.ResourceName) string {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,8 +130,8 @@ func TestNodeRequestWritersMatchGoldenFiles(t *testing.T) {
 		Node:         "worker-07",
 		Completeness: nodeanalysis.CompletenessComplete,
 		Resources: []nodeanalysis.ResourceUsage{
-			{Resource: corev1.ResourceCPU, Allocatable: cpuAllocatable, Requested: cpuRequested, Available: cpuAvailable, RequestsKnown: true, Ratio: 25, RatioKnown: true},
-			{Resource: corev1.ResourcePods, Allocatable: podsAllocatable, Requested: podsRequested, Available: podsAvailable, RequestsKnown: true, Ratio: 20, RatioKnown: true},
+			{Resource: corev1.ResourceCPU, Allocatable: cpuAllocatable, Requested: cpuRequested, Available: cpuAvailable, RequestsKnown: true, AvailableKnown: true, Ratio: 25, RatioKnown: true},
+			{Resource: corev1.ResourcePods, Allocatable: podsAllocatable, Requested: podsRequested, Available: podsAvailable, RequestsKnown: true, AvailableKnown: true, Ratio: 20, RatioKnown: true},
 		},
 		TopResource: corev1.ResourceCPU,
 		Consumers: []nodeanalysis.Consumer{{
@@ -168,6 +169,199 @@ func TestNodeRequestWritersMatchGoldenFiles(t *testing.T) {
 				t.Fatalf("output mismatch\n--- actual ---\n%s--- expected ---\n%s", actual.String(), expected)
 			}
 		})
+	}
+}
+
+func TestNodeRequestExtendedWritersMatchGoldenFiles(t *testing.T) {
+	report := nodeanalysis.RequestsReport{
+		CapturedAt:   time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC),
+		Node:         "worker-07",
+		Completeness: nodeanalysis.CompletenessComplete,
+		Resources: []nodeanalysis.ResourceUsage{
+			{
+				Resource: corev1.ResourceName("example.com/fpga"), Allocatable: resource.MustParse("2"),
+				Requested: resource.MustParse("1"), Available: resource.MustParse("1"), RequestsKnown: true, AvailableKnown: true,
+				Ratio: 50, RatioKnown: true,
+			},
+			{
+				Resource: corev1.ResourceName("nvidia.com/gpu"), Allocatable: resource.MustParse("4"),
+				Requested: resource.MustParse("3"), Available: resource.MustParse("1"), RequestsKnown: true, AvailableKnown: true,
+				Ratio: 75, RatioKnown: true,
+			},
+		},
+		TopResource:   corev1.ResourceCPU,
+		Consumers:     []nodeanalysis.Consumer{},
+		ShowExtended:  true,
+		ExtendedKnown: true,
+		ExtendedConsumers: []nodeanalysis.ExtendedResourceConsumer{
+			{
+				Resource: "example.com/fpga", Namespace: "media", Pod: "encoder-0", UID: "uid-fpga",
+				Request: resource.MustParse("1"), Owner: "StatefulSet/encoder",
+			},
+			{
+				Resource: "nvidia.com/gpu", Namespace: "training", Pod: "model-a", UID: "uid-gpu-a",
+				Request: resource.MustParse("2"), Owner: "Job/model-a",
+			},
+			{
+				Resource: "nvidia.com/gpu", Namespace: "kube-system", Pod: "gpu-agent", UID: "uid-gpu-agent",
+				Request: resource.MustParse("1"), Owner: "DaemonSet/gpu-agent", DaemonSet: true,
+			},
+		},
+		Warnings: []string{},
+	}
+	tests := []struct {
+		name   string
+		format string
+		golden string
+	}{
+		{name: "table", format: FormatTable, golden: "node_requests_extended_table.golden"},
+		{name: "wide", format: FormatWide, golden: "node_requests_extended_wide.golden"},
+		{name: "json", format: FormatJSON, golden: "node_requests_extended_json.golden"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			writer, err := NewWriter(test.format)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var actual bytes.Buffer
+			if err := writer.WriteNodeRequests(&actual, report); err != nil {
+				t.Fatal(err)
+			}
+			expected, err := os.ReadFile(filepath.Join("testdata", test.golden))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if actual.String() != string(expected) {
+				t.Fatalf("output mismatch\n--- actual ---\n%s--- expected ---\n%s", actual.String(), expected)
+			}
+		})
+	}
+}
+
+func TestNodeRequestPodResourcesWritersMatchGoldenFiles(t *testing.T) {
+	report := nodeanalysis.RequestsReport{
+		CapturedAt:   time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC),
+		Node:         "worker-07",
+		Completeness: nodeanalysis.CompletenessComplete,
+		Resources: []nodeanalysis.ResourceUsage{
+			{
+				Resource: corev1.ResourceCPU, Allocatable: resource.MustParse("4"),
+				Requested: resource.MustParse("500m"), Available: resource.MustParse("3500m"), RequestsKnown: true, AvailableKnown: true,
+				Ratio: 12.5, RatioKnown: true,
+			},
+			{
+				Resource: corev1.ResourceMemory, Allocatable: resource.MustParse("8Gi"),
+				Requested: resource.MustParse("1Gi"), Available: resource.MustParse("7Gi"), RequestsKnown: true, AvailableKnown: true,
+				Ratio: 12.5, RatioKnown: true,
+			},
+			{
+				Resource: corev1.ResourceName("nvidia.com/gpu"), Allocatable: resource.MustParse("2"),
+				Requested: resource.MustParse("1"), Available: resource.MustParse("1"), RequestsKnown: true, AvailableKnown: true,
+				Ratio: 50, RatioKnown: true,
+			},
+		},
+		TopResource:       corev1.ResourceCPU,
+		Consumers:         []nodeanalysis.Consumer{},
+		ShowPods:          true,
+		PodResourcesKnown: true,
+		PodResources: []nodeanalysis.PodResourceBreakdown{
+			{
+				Namespace: "production", Pod: "api", UID: "uid-api", Owner: "ReplicaSet/api-7d8f",
+				Resources: []nodeanalysis.PodResource{
+					{
+						Resource: corev1.ResourceCPU, Request: resource.MustParse("500m"), Limit: resource.MustParse("1"),
+						RequestSet: true, LimitSet: true, RequestRatio: 12.5, RatioKnown: true,
+					},
+					{
+						Resource: corev1.ResourceMemory, Request: resource.MustParse("1Gi"), Limit: resource.MustParse("2Gi"),
+						RequestSet: true, LimitSet: true, RequestRatio: 12.5, RatioKnown: true,
+					},
+					{
+						Resource: "nvidia.com/gpu", Request: resource.MustParse("1"), Limit: resource.MustParse("1"),
+						RequestSet: true, LimitSet: true, RequestRatio: 50, RatioKnown: true,
+					},
+				},
+			},
+			{
+				Namespace: "system", Pod: "best-effort", UID: "uid-best-effort", Owner: "DaemonSet/best-effort", DaemonSet: true,
+				Resources: []nodeanalysis.PodResource{},
+			},
+		},
+		Warnings: []string{},
+	}
+	tests := []struct {
+		name   string
+		format string
+		golden string
+	}{
+		{name: "table", format: FormatTable, golden: "node_requests_pods_table.golden"},
+		{name: "wide", format: FormatWide, golden: "node_requests_pods_wide.golden"},
+		{name: "json", format: FormatJSON, golden: "node_requests_pods_json.golden"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			writer, err := NewWriter(test.format)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var actual bytes.Buffer
+			if err := writer.WriteNodeRequests(&actual, report); err != nil {
+				t.Fatal(err)
+			}
+			expected, err := os.ReadFile(filepath.Join("testdata", test.golden))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if actual.String() != string(expected) {
+				t.Fatalf("output mismatch\n--- actual ---\n%s--- expected ---\n%s", actual.String(), expected)
+			}
+		})
+	}
+}
+
+func TestNodeRequestPodResourcesJSONReportsUnknown(t *testing.T) {
+	report := nodeanalysis.RequestsReport{
+		CapturedAt:   time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC),
+		Node:         "worker-07",
+		Completeness: nodeanalysis.CompletenessPartial,
+		Resources:    []nodeanalysis.ResourceUsage{},
+		Consumers:    []nodeanalysis.Consumer{},
+		ShowPods:     true,
+		Warnings:     []string{"Pods could not be listed."},
+	}
+	var out bytes.Buffer
+	if err := (jsonWriter{}).WriteNodeRequests(&out, report); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"podResources": null`) {
+		t.Fatalf("unexpected output: %s", out.String())
+	}
+}
+
+func TestNodeRequestWritersShowNamespaceScope(t *testing.T) {
+	report := nodeanalysis.RequestsReport{
+		CapturedAt:   time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC),
+		Node:         "worker-07",
+		Namespace:    "production",
+		Completeness: nodeanalysis.CompletenessComplete,
+		Resources:    []nodeanalysis.ResourceUsage{},
+		Consumers:    []nodeanalysis.Consumer{},
+		Warnings:     []string{},
+	}
+	var table bytes.Buffer
+	if err := (tableWriter{}).WriteNodeRequests(&table, report); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(table.String(), "NAMESPACE: production\n\n") {
+		t.Fatalf("unexpected table output: %s", table.String())
+	}
+	var jsonOutput bytes.Buffer
+	if err := (jsonWriter{}).WriteNodeRequests(&jsonOutput, report); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(jsonOutput.String(), `"namespace": "production"`) {
+		t.Fatalf("unexpected JSON output: %s", jsonOutput.String())
 	}
 }
 

@@ -133,14 +133,17 @@ func (jsonWriter) WriteRestarts(out io.Writer, report pod.RestartReport) error {
 }
 
 type nodeRequestsJSONReport struct {
-	CapturedAt   string             `json:"capturedAt"`
-	Node         string             `json:"node"`
-	Source       string             `json:"source"`
-	Completeness string             `json:"completeness"`
-	Resources    []nodeResourceJSON `json:"resources"`
-	TopResource  string             `json:"topResource"`
-	Consumers    []nodeConsumerJSON `json:"consumers"`
-	Warnings     []string           `json:"warnings"`
+	CapturedAt                string                      `json:"capturedAt"`
+	Node                      string                      `json:"node"`
+	Namespace                 string                      `json:"namespace,omitempty"`
+	Source                    string                      `json:"source"`
+	Completeness              string                      `json:"completeness"`
+	Resources                 []nodeResourceJSON          `json:"resources"`
+	TopResource               string                      `json:"topResource"`
+	Consumers                 []nodeConsumerJSON          `json:"consumers"`
+	ExtendedResourceConsumers *[]nodeExtendedConsumerJSON `json:"extendedResourceConsumers,omitempty"`
+	PodResources              *[]nodePodResourcesJSON     `json:"podResources,omitempty"`
+	Warnings                  []string                    `json:"warnings"`
 }
 
 type nodeResourceJSON struct {
@@ -160,6 +163,32 @@ type nodeConsumerJSON struct {
 	DaemonSet bool   `json:"daemonSet"`
 }
 
+type nodeExtendedConsumerJSON struct {
+	Resource  string `json:"resource"`
+	Namespace string `json:"namespace"`
+	Pod       string `json:"pod"`
+	UID       string `json:"uid"`
+	Request   string `json:"request"`
+	Owner     string `json:"owner"`
+	DaemonSet bool   `json:"daemonSet"`
+}
+
+type nodePodResourcesJSON struct {
+	Namespace string                `json:"namespace"`
+	Pod       string                `json:"pod"`
+	UID       string                `json:"uid"`
+	Owner     string                `json:"owner"`
+	DaemonSet bool                  `json:"daemonSet"`
+	Resources []nodePodResourceJSON `json:"resources"`
+}
+
+type nodePodResourceJSON struct {
+	Resource     string   `json:"resource"`
+	Request      *string  `json:"request"`
+	Limit        *string  `json:"limit"`
+	RequestRatio *float64 `json:"requestRatio"`
+}
+
 func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsReport) error {
 	resources := make([]nodeResourceJSON, 0, len(report.Resources))
 	for _, usage := range report.Resources {
@@ -169,8 +198,10 @@ func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsR
 		}
 		if usage.RequestsKnown {
 			requested := usage.Requested.String()
-			available := usage.Available.String()
 			item.Requested = &requested
+		}
+		if usage.AvailableKnown {
+			available := usage.Available.String()
 			item.Available = &available
 		}
 		if usage.RatioKnown {
@@ -190,15 +221,72 @@ func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsR
 			DaemonSet: consumer.DaemonSet,
 		})
 	}
+	var extendedConsumers *[]nodeExtendedConsumerJSON
+	if report.ShowExtended {
+		var items []nodeExtendedConsumerJSON
+		if report.ExtendedKnown {
+			items = make([]nodeExtendedConsumerJSON, 0, len(report.ExtendedConsumers))
+		}
+		for _, consumer := range report.ExtendedConsumers {
+			items = append(items, nodeExtendedConsumerJSON{
+				Resource:  string(consumer.Resource),
+				Namespace: consumer.Namespace,
+				Pod:       consumer.Pod,
+				UID:       consumer.UID,
+				Request:   consumer.Request.String(),
+				Owner:     consumer.Owner,
+				DaemonSet: consumer.DaemonSet,
+			})
+		}
+		extendedConsumers = &items
+	}
+	var podResources *[]nodePodResourcesJSON
+	if report.ShowPods {
+		var items []nodePodResourcesJSON
+		if report.PodResourcesKnown {
+			items = make([]nodePodResourcesJSON, 0, len(report.PodResources))
+		}
+		for _, pod := range report.PodResources {
+			resources := make([]nodePodResourceJSON, 0, len(pod.Resources))
+			for _, usage := range pod.Resources {
+				resource := nodePodResourceJSON{Resource: string(usage.Resource)}
+				if usage.RequestSet {
+					request := usage.Request.String()
+					resource.Request = &request
+				}
+				if usage.LimitSet {
+					limit := usage.Limit.String()
+					resource.Limit = &limit
+				}
+				if usage.RatioKnown {
+					ratio := usage.RequestRatio
+					resource.RequestRatio = &ratio
+				}
+				resources = append(resources, resource)
+			}
+			items = append(items, nodePodResourcesJSON{
+				Namespace: pod.Namespace,
+				Pod:       pod.Pod,
+				UID:       pod.UID,
+				Owner:     pod.Owner,
+				DaemonSet: pod.DaemonSet,
+				Resources: resources,
+			})
+		}
+		podResources = &items
+	}
 	payload := nodeRequestsJSONReport{
-		CapturedAt:   report.CapturedAt.UTC().Format(time.RFC3339Nano),
-		Node:         report.Node,
-		Source:       "CurrentState",
-		Completeness: string(report.Completeness),
-		Resources:    resources,
-		TopResource:  string(report.TopResource),
-		Consumers:    consumers,
-		Warnings:     append([]string(nil), report.Warnings...),
+		CapturedAt:                report.CapturedAt.UTC().Format(time.RFC3339Nano),
+		Node:                      report.Node,
+		Namespace:                 report.Namespace,
+		Source:                    "CurrentState",
+		Completeness:              string(report.Completeness),
+		Resources:                 resources,
+		TopResource:               string(report.TopResource),
+		Consumers:                 consumers,
+		ExtendedResourceConsumers: extendedConsumers,
+		PodResources:              podResources,
+		Warnings:                  append([]string(nil), report.Warnings...),
 	}
 	if payload.Warnings == nil {
 		payload.Warnings = []string{}

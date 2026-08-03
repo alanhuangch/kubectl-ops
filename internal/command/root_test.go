@@ -157,8 +157,9 @@ func TestNodeRequestsUsesNodeFieldSelector(t *testing.T) {
 		}},
 	}}
 	client := fake.NewClientset(node, pod)
-	var fieldSelector string
+	var namespace, fieldSelector string
 	client.PrependReactor("list", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		namespace = action.GetNamespace()
 		fieldSelector = action.(clienttesting.ListAction).GetListRestrictions().Fields.String()
 		return false, nil, nil
 	})
@@ -175,11 +176,245 @@ func TestNodeRequestsUsesNodeFieldSelector(t *testing.T) {
 	if fieldSelector != "spec.nodeName=worker-07" {
 		t.Fatalf("field selector = %q", fieldSelector)
 	}
+	if namespace != metav1.NamespaceAll {
+		t.Fatalf("namespace = %q, want all namespaces", namespace)
+	}
 	if !strings.Contains(out.String(), `"node": "worker-07"`) || !strings.Contains(out.String(), `"request": "500m"`) {
 		t.Fatalf("unexpected output: %s", out.String())
 	}
+	if strings.Contains(out.String(), `"extendedResourceConsumers"`) {
+		t.Fatalf("extended resource consumers must be omitted unless --extended is set: %s", out.String())
+	}
+	if strings.Contains(out.String(), `"podResources"`) {
+		t.Fatalf("Pod resources must be omitted unless --pods is set: %s", out.String())
+	}
 	if errOut.Len() != 0 {
 		t.Fatalf("unexpected stderr: %s", errOut.String())
+	}
+}
+
+func TestNodeRequestsFiltersNamespace(t *testing.T) {
+	now := time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC)
+	production := commandTestPod("production", "api", "worker-07", nil, now)
+	production.Spec.Containers = []corev1.Container{{
+		Name: "api",
+		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+			corev1.ResourceCPU: resource.MustParse("500m"),
+		}},
+	}}
+	system := commandTestPod("kube-system", "agent", "worker-07", nil, now)
+	system.Spec.Containers = []corev1.Container{{
+		Name: "agent",
+		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+			corev1.ResourceCPU: resource.MustParse("250m"),
+		}},
+	}}
+	client := fake.NewClientset(commandTestNode("worker-07"), production, system)
+	var namespace, fieldSelector string
+	client.PrependReactor("list", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		namespace = action.GetNamespace()
+		fieldSelector = action.(clienttesting.ListAction).GetListRestrictions().Fields.String()
+		return false, nil, nil
+	})
+
+	var out, errOut bytes.Buffer
+	cmd := newRootCommand(genericclioptions.IOStreams{Out: &out, ErrOut: &errOut}, dependencies{
+		clientFactory: func() (kubernetes.Interface, error) { return client, nil },
+		now:           func() time.Time { return now },
+	})
+	cmd.SetArgs([]string{"node", "requests", "worker-07", "--pods", "--top", "0", "-n", "production", "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if namespace != "production" || fieldSelector != "spec.nodeName=worker-07" {
+		t.Fatalf("scope = namespace %q, field selector %q", namespace, fieldSelector)
+	}
+	for _, expected := range []string{`"namespace": "production"`, `"pod": "api"`, `"requested": "500m"`, `"available": null`} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("output does not contain %q: %s", expected, out.String())
+		}
+	}
+	if strings.Contains(out.String(), `"pod": "agent"`) || strings.Contains(out.String(), `"requested": "750m"`) {
+		t.Fatalf("output includes Pods outside the selected namespace: %s", out.String())
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected stderr: %s", errOut.String())
+	}
+}
+
+func TestNodeRequestsRejectsNamespaceWithAllNamespaces(t *testing.T) {
+	cmd := newRootCommand(genericclioptions.IOStreams{}, dependencies{
+		clientFactory: func() (kubernetes.Interface, error) {
+			t.Fatal("invalid namespace flags must not create a Kubernetes client")
+			return nil, nil
+		},
+	})
+	cmd.SetArgs([]string{"node", "requests", "worker-07", "-n", "production", "-A"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--namespace and --all-namespaces cannot be used together") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNodeRequestsOnlyResourceAcrossNamespaces(t *testing.T) {
+	now := time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC)
+	gpu := corev1.ResourceName("nvidia.com/gpu")
+	node := commandTestNode("worker-07")
+	node.Status.Allocatable[gpu] = resource.MustParse("4")
+	production := commandTestPod("production", "inference", "worker-07", nil, now)
+	production.Spec.Containers = []corev1.Container{{
+		Name: "inference",
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{gpu: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("1Gi")},
+			Limits:   corev1.ResourceList{gpu: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("2Gi")},
+		},
+	}}
+	training := commandTestPod("training", "model", "worker-07", nil, now)
+	training.Spec.Containers = []corev1.Container{{
+		Name: "model",
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{gpu: resource.MustParse("2")},
+			Limits:   corev1.ResourceList{gpu: resource.MustParse("2")},
+		},
+	}}
+	cpuOnly := commandTestPod("kube-system", "cpu-only", "worker-07", nil, now)
+	cpuOnly.Spec.Containers = []corev1.Container{{
+		Name: "agent",
+		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+			corev1.ResourceCPU: resource.MustParse("250m"),
+		}},
+	}}
+	client := fake.NewClientset(node, production, training, cpuOnly)
+
+	var out, errOut bytes.Buffer
+	cmd := newRootCommand(genericclioptions.IOStreams{Out: &out, ErrOut: &errOut}, dependencies{
+		clientFactory: func() (kubernetes.Interface, error) { return client, nil },
+		now:           func() time.Time { return now },
+	})
+	cmd.SetArgs([]string{"node", "requests", "worker-07", "-A", "--resource", string(gpu), "--only-resource", "--pods", "--top", "0", "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out.String(), `"resource": "nvidia.com/gpu"`) != 3 {
+		t.Fatalf("unexpected filtered resource count: %s", out.String())
+	}
+	for _, expected := range []string{`"pod": "inference"`, `"pod": "model"`, `"requested": "3"`} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("output does not contain %q: %s", expected, out.String())
+		}
+	}
+	for _, unexpected := range []string{`"resource": "memory"`, `"resource": "cpu"`, `"pod": "cpu-only"`} {
+		if strings.Contains(out.String(), unexpected) {
+			t.Fatalf("output contains filtered value %q: %s", unexpected, out.String())
+		}
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected stderr: %s", errOut.String())
+	}
+}
+
+func TestNodeRequestsOnlyResourceRequiresResourceFlag(t *testing.T) {
+	cmd := newRootCommand(genericclioptions.IOStreams{}, dependencies{
+		clientFactory: func() (kubernetes.Interface, error) {
+			t.Fatal("invalid resource filter must not create a Kubernetes client")
+			return nil, nil
+		},
+	})
+	cmd.SetArgs([]string{"node", "requests", "worker-07", "--only-resource"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--only-resource requires an explicit --resource") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestNodeRequestsShowsExtendedResourceConsumers(t *testing.T) {
+	now := time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC)
+	node := commandTestNode("worker-07")
+	node.Status.Allocatable[corev1.ResourceName("nvidia.com/gpu")] = resource.MustParse("4")
+	pod := commandTestPod("training", "model", "worker-07", nil, now)
+	pod.Spec.Containers = []corev1.Container{{
+		Name: "model",
+		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+			corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("2"),
+		}},
+	}}
+	client := fake.NewClientset(node, pod)
+
+	var out, errOut bytes.Buffer
+	cmd := newRootCommand(genericclioptions.IOStreams{Out: &out, ErrOut: &errOut}, dependencies{
+		clientFactory: func() (kubernetes.Interface, error) { return client, nil },
+		now:           func() time.Time { return now },
+	})
+	cmd.SetArgs([]string{"node", "requests", "worker-07", "--extended", "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`"extendedResourceConsumers": [`,
+		`"resource": "nvidia.com/gpu"`,
+		`"pod": "model"`,
+		`"request": "2"`,
+	} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("output does not contain %q: %s", expected, out.String())
+		}
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected stderr: %s", errOut.String())
+	}
+}
+
+func TestNodeRequestsShowsPodResources(t *testing.T) {
+	now := time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC)
+	node := commandTestNode("worker-07")
+	node.Status.Allocatable[corev1.ResourceName("nvidia.com/gpu")] = resource.MustParse("4")
+	pod := commandTestPod("training", "model", "worker-07", nil, now)
+	pod.Spec.Containers = []corev1.Container{{
+		Name: "model",
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory:                 resource.MustParse("1Gi"),
+				corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("2"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceMemory:                 resource.MustParse("2Gi"),
+				corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("2"),
+			},
+		},
+	}}
+	client := fake.NewClientset(node, pod)
+
+	var out, errOut bytes.Buffer
+	cmd := newRootCommand(genericclioptions.IOStreams{Out: &out, ErrOut: &errOut}, dependencies{
+		clientFactory: func() (kubernetes.Interface, error) { return client, nil },
+		now:           func() time.Time { return now },
+	})
+	cmd.SetArgs([]string{"node", "requests", "worker-07", "--pods", "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`"podResources": [`,
+		`"resource": "memory"`,
+		`"limit": "2Gi"`,
+		`"resource": "nvidia.com/gpu"`,
+		`"request": "2"`,
+	} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("output does not contain %q: %s", expected, out.String())
+		}
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected stderr: %s", errOut.String())
+	}
+}
+
+func TestNodeRequestsRejectsExtendedWithPods(t *testing.T) {
+	cmd := newRootCommand(genericclioptions.IOStreams{}, dependencies{})
+	cmd.SetArgs([]string{"node", "requests", "worker-07", "--extended", "--pods"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--pods already includes extended resources") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -195,11 +430,13 @@ func TestNodeRequestsDegradesWhenPodListIsForbidden(t *testing.T) {
 		clientFactory: func() (kubernetes.Interface, error) { return client, nil },
 		now:           func() time.Time { return now },
 	})
-	cmd.SetArgs([]string{"node", "requests", "worker-07", "-o", "json"})
+	cmd.SetArgs([]string{"node", "requests", "worker-07", "--extended", "-o", "json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `"completeness": "Partial"`) || !strings.Contains(out.String(), `"requested": null`) {
+	if !strings.Contains(out.String(), `"completeness": "Partial"`) ||
+		!strings.Contains(out.String(), `"requested": null`) ||
+		!strings.Contains(out.String(), `"extendedResourceConsumers": null`) {
 		t.Fatalf("unexpected output: %s", out.String())
 	}
 	if errOut.Len() != 0 {

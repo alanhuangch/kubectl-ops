@@ -1,0 +1,11 @@
+RESOURCE        ALLOCATABLE  REQUESTED  AVAILABLE  RATIO
+cpu             4            500m       3500m      12.5%
+memory          8Gi          1Gi        7Gi        12.5%
+nvidia.com/gpu  2            1          1          50.0%
+
+POD RESOURCES
+NAMESPACE   POD          RESOURCE        REQUEST  LIMIT  NODE-RATIO  OWNER
+production  api          cpu             500m     1      12.5%       ReplicaSet/api-7d8f
+production  api          memory          1Gi      2Gi    12.5%       ReplicaSet/api-7d8f
+production  api          nvidia.com/gpu  1        1      50.0%       ReplicaSet/api-7d8f
+system      best-effort  -               -        -      -           DaemonSet/best-effort
