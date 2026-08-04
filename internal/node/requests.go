@@ -134,6 +134,7 @@ func AnalyzeRequests(item *corev1.Node, pods []corev1.Pod, options RequestsOptio
 				CreatedAt:   entry.createdAt,
 				ScheduledAt: entry.scheduledAt,
 				Request:     quantity.DeepCopy(),
+				Resources:   podResourceUsages(item, entry.requests, nil, options.ResourceFilter),
 				Owner:       owner,
 				DaemonSet:   daemonSet,
 			})
@@ -206,45 +207,7 @@ func AnalyzeRequests(item *corev1.Node, pods []corev1.Pod, options RequestsOptio
 				ScheduledAt: entry.scheduledAt,
 				Owner:       owner,
 				DaemonSet:   daemonSet,
-			}
-			resourceSet := make(map[corev1.ResourceName]struct{}, len(entry.requests)+len(entry.limits))
-			for name, quantity := range entry.requests {
-				if !quantity.IsZero() && (options.ResourceFilter == "" || name == options.ResourceFilter) {
-					resourceSet[name] = struct{}{}
-				}
-			}
-			for name, quantity := range entry.limits {
-				if !quantity.IsZero() && (options.ResourceFilter == "" || name == options.ResourceFilter) {
-					resourceSet[name] = struct{}{}
-				}
-			}
-			resourceNames := make([]corev1.ResourceName, 0, len(resourceSet))
-			for name := range resourceSet {
-				resourceNames = append(resourceNames, name)
-			}
-			sort.Slice(resourceNames, func(i, j int) bool {
-				leftRank, rightRank := resourceRank(resourceNames[i]), resourceRank(resourceNames[j])
-				if leftRank != rightRank {
-					return leftRank < rightRank
-				}
-				return resourceNames[i] < resourceNames[j]
-			})
-			for _, name := range resourceNames {
-				request, requestSet := entry.requests[name]
-				limit, limitSet := entry.limits[name]
-				usage := PodResource{
-					Resource:   name,
-					Request:    request.DeepCopy(),
-					Limit:      limit.DeepCopy(),
-					RequestSet: requestSet && !request.IsZero(),
-					LimitSet:   limitSet && !limit.IsZero(),
-				}
-				allocatable := item.Status.Allocatable[name]
-				if usage.RequestSet && !allocatable.IsZero() {
-					usage.RequestRatio = request.AsApproximateFloat64() / allocatable.AsApproximateFloat64() * 100
-					usage.RatioKnown = true
-				}
-				breakdown.Resources = append(breakdown.Resources, usage)
+				Resources:   podResourceUsages(item, entry.requests, entry.limits, options.ResourceFilter),
 			}
 			if options.ResourceFilter == "" || len(breakdown.Resources) > 0 {
 				report.PodResources = append(report.PodResources, breakdown)
@@ -262,6 +225,50 @@ func AnalyzeRequests(item *corev1.Node, pods []corev1.Pod, options RequestsOptio
 		})
 	}
 	return report
+}
+
+func podResourceUsages(item *corev1.Node, requests, limits corev1.ResourceList, filter corev1.ResourceName) []PodResource {
+	resourceSet := make(map[corev1.ResourceName]struct{}, len(requests)+len(limits))
+	for name, quantity := range requests {
+		if !quantity.IsZero() && (filter == "" || name == filter) {
+			resourceSet[name] = struct{}{}
+		}
+	}
+	for name, quantity := range limits {
+		if !quantity.IsZero() && (filter == "" || name == filter) {
+			resourceSet[name] = struct{}{}
+		}
+	}
+	resourceNames := make([]corev1.ResourceName, 0, len(resourceSet))
+	for name := range resourceSet {
+		resourceNames = append(resourceNames, name)
+	}
+	sort.Slice(resourceNames, func(i, j int) bool {
+		leftRank, rightRank := resourceRank(resourceNames[i]), resourceRank(resourceNames[j])
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return resourceNames[i] < resourceNames[j]
+	})
+	result := make([]PodResource, 0, len(resourceNames))
+	for _, name := range resourceNames {
+		request, requestSet := requests[name]
+		limit, limitSet := limits[name]
+		usage := PodResource{
+			Resource:   name,
+			Request:    request.DeepCopy(),
+			Limit:      limit.DeepCopy(),
+			RequestSet: requestSet && !request.IsZero(),
+			LimitSet:   limitSet && !limit.IsZero(),
+		}
+		allocatable := item.Status.Allocatable[name]
+		if usage.RequestSet && !allocatable.IsZero() {
+			usage.RequestRatio = request.AsApproximateFloat64() / allocatable.AsApproximateFloat64() * 100
+			usage.RatioKnown = true
+		}
+		result = append(result, usage)
+	}
+	return result
 }
 
 func isExtendedResourceName(name corev1.ResourceName) bool {

@@ -114,12 +114,28 @@ func TestAnalyzeRequestsIncludesPodCreationAndSchedulingTimes(t *testing.T) {
 	if len(report.Consumers) != 1 || !report.Consumers[0].CreatedAt.Equal(createdAt) || !report.Consumers[0].ScheduledAt.Equal(scheduledAt) {
 		t.Fatalf("unexpected top consumer times: %#v", report.Consumers)
 	}
+	assertConsumerResource(t, report.Consumers[0], corev1.ResourceCPU, "100m", 2.5)
+	assertConsumerResource(t, report.Consumers[0], corev1.ResourceName("nvidia.com/gpu"), "1", 50)
 	if len(report.ExtendedConsumers) != 1 || !report.ExtendedConsumers[0].CreatedAt.Equal(createdAt) || !report.ExtendedConsumers[0].ScheduledAt.Equal(scheduledAt) {
 		t.Fatalf("unexpected extended consumer times: %#v", report.ExtendedConsumers)
 	}
 	if len(report.PodResources) != 1 || !report.PodResources[0].CreatedAt.Equal(createdAt) || !report.PodResources[0].ScheduledAt.Equal(scheduledAt) {
 		t.Fatalf("unexpected Pod resource times: %#v", report.PodResources)
 	}
+}
+
+func assertConsumerResource(t *testing.T, consumer Consumer, name corev1.ResourceName, request string, ratio float64) {
+	t.Helper()
+	for _, usage := range consumer.Resources {
+		if usage.Resource != name {
+			continue
+		}
+		if !usage.RequestSet || usage.Request.String() != request || !usage.RatioKnown || usage.RequestRatio != ratio {
+			t.Fatalf("consumer resource %s = %#v", name, usage)
+		}
+		return
+	}
+	t.Fatalf("consumer resource %s not found: %#v", name, consumer.Resources)
 }
 
 func TestAnalyzeRequestsReturnsPartialWithoutPods(t *testing.T) {

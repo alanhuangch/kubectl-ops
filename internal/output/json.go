@@ -155,14 +155,15 @@ type nodeResourceJSON struct {
 }
 
 type nodeConsumerJSON struct {
-	Namespace   string  `json:"namespace"`
-	Pod         string  `json:"pod"`
-	UID         string  `json:"uid"`
-	CreatedAt   *string `json:"createdAt"`
-	ScheduledAt *string `json:"scheduledAt"`
-	Request     string  `json:"request"`
-	Owner       string  `json:"owner"`
-	DaemonSet   bool    `json:"daemonSet"`
+	Namespace   string                `json:"namespace"`
+	Pod         string                `json:"pod"`
+	UID         string                `json:"uid"`
+	CreatedAt   *string               `json:"createdAt"`
+	ScheduledAt *string               `json:"scheduledAt"`
+	Request     string                `json:"request"`
+	Resources   []nodePodResourceJSON `json:"resources"`
+	Owner       string                `json:"owner"`
+	DaemonSet   bool                  `json:"daemonSet"`
 }
 
 type nodeExtendedConsumerJSON struct {
@@ -225,6 +226,7 @@ func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsR
 			CreatedAt:   optionalTimestamp(consumer.CreatedAt),
 			ScheduledAt: optionalTimestamp(consumer.ScheduledAt),
 			Request:     consumer.Request.String(),
+			Resources:   podResourcesJSON(consumer.Resources),
 			Owner:       consumer.Owner,
 			DaemonSet:   consumer.DaemonSet,
 		})
@@ -257,23 +259,6 @@ func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsR
 			items = make([]nodePodResourcesJSON, 0, len(report.PodResources))
 		}
 		for _, pod := range report.PodResources {
-			resources := make([]nodePodResourceJSON, 0, len(pod.Resources))
-			for _, usage := range pod.Resources {
-				resource := nodePodResourceJSON{Resource: string(usage.Resource)}
-				if usage.RequestSet {
-					request := usage.Request.String()
-					resource.Request = &request
-				}
-				if usage.LimitSet {
-					limit := usage.Limit.String()
-					resource.Limit = &limit
-				}
-				if usage.RatioKnown {
-					ratio := usage.RequestRatio
-					resource.RequestRatio = &ratio
-				}
-				resources = append(resources, resource)
-			}
 			items = append(items, nodePodResourcesJSON{
 				Namespace:   pod.Namespace,
 				Pod:         pod.Pod,
@@ -282,7 +267,7 @@ func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsR
 				ScheduledAt: optionalTimestamp(pod.ScheduledAt),
 				Owner:       pod.Owner,
 				DaemonSet:   pod.DaemonSet,
-				Resources:   resources,
+				Resources:   podResourcesJSON(pod.Resources),
 			})
 		}
 		podResources = &items
@@ -306,6 +291,27 @@ func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsR
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(payload)
+}
+
+func podResourcesJSON(usages []nodeanalysis.PodResource) []nodePodResourceJSON {
+	resources := make([]nodePodResourceJSON, 0, len(usages))
+	for _, usage := range usages {
+		resource := nodePodResourceJSON{Resource: string(usage.Resource)}
+		if usage.RequestSet {
+			request := usage.Request.String()
+			resource.Request = &request
+		}
+		if usage.LimitSet {
+			limit := usage.Limit.String()
+			resource.Limit = &limit
+		}
+		if usage.RatioKnown {
+			ratio := usage.RequestRatio
+			resource.RequestRatio = &ratio
+		}
+		resources = append(resources, resource)
+	}
+	return resources
 }
 
 func optionalTimestamp(value time.Time) *string {

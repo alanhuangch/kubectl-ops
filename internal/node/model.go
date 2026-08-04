@@ -32,6 +32,7 @@ type Consumer struct {
 	CreatedAt   time.Time
 	ScheduledAt time.Time
 	Request     resource.Quantity
+	Resources   []PodResource
 	Owner       string
 	DaemonSet   bool
 }

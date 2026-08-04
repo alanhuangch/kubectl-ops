@@ -56,7 +56,7 @@ func newNodeRequestsCommand(root *rootOptions) *cobra.Command {
 	cmd.Flags().IntVar(&options.top, "top", 10, "Number of top requesting Pods to show")
 	cmd.Flags().StringVar(&options.resource, "resource", string(corev1.ResourceCPU), "Resource used to rank top consumers")
 	cmd.Flags().BoolVar(&options.showExtended, "extended", false, "Show Pods requesting scalar extended resources")
-	cmd.Flags().BoolVar(&options.showPods, "pods", false, "Show per-Pod requests and limits for all resource types")
+	cmd.Flags().BoolVar(&options.showPods, "pods", false, "Show compact per-Pod resource requests and Node ratios")
 	cmd.Flags().BoolVar(&options.onlyResource, "only-resource", false, "Only show the selected --resource in summaries and Pod details")
 	return cmd
 }

@@ -103,7 +103,7 @@ assert_json "${restarts_json}" '.items | any(.pod == "restart-pod" and .containe
 echo "Checking node requests..."
 requests_json="$("${E2E_BIN}" node requests "${worker_node}" --resource cpu --top 50 -o json)"
 assert_json "${requests_json}" '.completeness == "Complete" and .source == "CurrentState"' "node requests completeness"
-assert_json "${requests_json}" '.consumers | any(.namespace == "kubectl-ops-e2e" and .pod == "recent-pod" and .request == "250m" and .createdAt != null and .scheduledAt != null)' "recent-pod CPU request and lifecycle times"
+assert_json "${requests_json}" '.consumers | any(.namespace == "kubectl-ops-e2e" and .pod == "recent-pod" and .request == "250m" and .createdAt != null and .scheduledAt != null and (.resources | any(.resource == "cpu" and .request == "250m" and .requestRatio != null)) and (.resources | any(.resource == "memory" and .request == "64Mi" and .requestRatio != null)))' "recent-pod compact resource requests, ratios, and lifecycle times"
 assert_json "${requests_json}" '.consumers | any(.namespace == "kubectl-ops-e2e" and .pod == "restart-pod" and .request == "100m")' "restart-pod CPU request"
 assert_json "${requests_json}" '.resources | any(.resource == "cpu" and .requested != null and .available != null and .ratio != null)' "CPU aggregate is available"
 

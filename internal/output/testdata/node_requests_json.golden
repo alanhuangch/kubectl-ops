@@ -12,11 +12,25 @@
       "ratio": 25
     },
     {
+      "resource": "memory",
+      "allocatable": "8Gi",
+      "requested": "1Gi",
+      "available": "7Gi",
+      "ratio": 12.5
+    },
+    {
       "resource": "pods",
       "allocatable": "10",
       "requested": "2",
       "available": "8",
       "ratio": 20
+    },
+    {
+      "resource": "nvidia.com/gpu",
+      "allocatable": "2",
+      "requested": "1",
+      "available": "1",
+      "ratio": 50
     }
   ],
   "topResource": "cpu",
@@ -28,6 +42,26 @@
       "createdAt": "2026-07-30T09:50:00Z",
       "scheduledAt": "2026-07-30T09:51:00Z",
       "request": "750m",
+      "resources": [
+        {
+          "resource": "cpu",
+          "request": "750m",
+          "limit": null,
+          "requestRatio": 18.75
+        },
+        {
+          "resource": "memory",
+          "request": "1Gi",
+          "limit": null,
+          "requestRatio": 12.5
+        },
+        {
+          "resource": "nvidia.com/gpu",
+          "request": "1",
+          "limit": null,
+          "requestRatio": 50
+        }
+      ],
       "owner": "ReplicaSet/api-7d8f",
       "daemonSet": false
     }

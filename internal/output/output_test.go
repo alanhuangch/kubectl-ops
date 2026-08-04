@@ -122,6 +122,12 @@ func TestNodeRequestWritersMatchGoldenFiles(t *testing.T) {
 	cpuAllocatable := resource.MustParse("4")
 	cpuRequested := resource.MustParse("1")
 	cpuAvailable := resource.MustParse("3")
+	memoryAllocatable := resource.MustParse("8Gi")
+	memoryRequested := resource.MustParse("1Gi")
+	memoryAvailable := resource.MustParse("7Gi")
+	gpuAllocatable := resource.MustParse("2")
+	gpuRequested := resource.MustParse("1")
+	gpuAvailable := resource.MustParse("1")
 	podsAllocatable := resource.MustParse("10")
 	podsRequested := resource.MustParse("2")
 	podsAvailable := resource.MustParse("8")
@@ -131,7 +137,9 @@ func TestNodeRequestWritersMatchGoldenFiles(t *testing.T) {
 		Completeness: nodeanalysis.CompletenessComplete,
 		Resources: []nodeanalysis.ResourceUsage{
 			{Resource: corev1.ResourceCPU, Allocatable: cpuAllocatable, Requested: cpuRequested, Available: cpuAvailable, RequestsKnown: true, AvailableKnown: true, Ratio: 25, RatioKnown: true},
+			{Resource: corev1.ResourceMemory, Allocatable: memoryAllocatable, Requested: memoryRequested, Available: memoryAvailable, RequestsKnown: true, AvailableKnown: true, Ratio: 12.5, RatioKnown: true},
 			{Resource: corev1.ResourcePods, Allocatable: podsAllocatable, Requested: podsRequested, Available: podsAvailable, RequestsKnown: true, AvailableKnown: true, Ratio: 20, RatioKnown: true},
+			{Resource: corev1.ResourceName("nvidia.com/gpu"), Allocatable: gpuAllocatable, Requested: gpuRequested, Available: gpuAvailable, RequestsKnown: true, AvailableKnown: true, Ratio: 50, RatioKnown: true},
 		},
 		TopResource: corev1.ResourceCPU,
 		Consumers: []nodeanalysis.Consumer{{
@@ -141,7 +149,12 @@ func TestNodeRequestWritersMatchGoldenFiles(t *testing.T) {
 			CreatedAt:   time.Date(2026, time.July, 30, 9, 50, 0, 0, time.UTC),
 			ScheduledAt: time.Date(2026, time.July, 30, 9, 51, 0, 0, time.UTC),
 			Request:     resource.MustParse("750m"),
-			Owner:       "ReplicaSet/api-7d8f",
+			Resources: []nodeanalysis.PodResource{
+				{Resource: corev1.ResourceCPU, Request: resource.MustParse("750m"), RequestSet: true, RequestRatio: 18.75, RatioKnown: true},
+				{Resource: corev1.ResourceMemory, Request: resource.MustParse("1Gi"), RequestSet: true, RequestRatio: 12.5, RatioKnown: true},
+				{Resource: corev1.ResourceName("nvidia.com/gpu"), Request: resource.MustParse("1"), RequestSet: true, RequestRatio: 50, RatioKnown: true},
+			},
+			Owner: "ReplicaSet/api-7d8f",
 		}},
 		Warnings: []string{},
 	}
@@ -346,6 +359,43 @@ func TestNodeRequestPodResourcesJSONReportsUnknown(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"podResources": null`) {
 		t.Fatalf("unexpected output: %s", out.String())
+	}
+}
+
+func TestPodResourceColumnsPreferCompactDefaultsAndRespectSingleResource(t *testing.T) {
+	report := nodeanalysis.RequestsReport{Resources: []nodeanalysis.ResourceUsage{
+		{Resource: corev1.ResourceCPU},
+		{Resource: corev1.ResourceMemory},
+		{Resource: corev1.ResourceEphemeralStorage},
+		{Resource: corev1.ResourcePods},
+		{Resource: corev1.ResourceName("example.com/fpga")},
+		{Resource: corev1.ResourceName("nvidia.com/gpu")},
+	}}
+	columns := podResourceColumns(report)
+	want := []corev1.ResourceName{
+		corev1.ResourceCPU,
+		corev1.ResourceMemory,
+		corev1.ResourceName("example.com/fpga"),
+		corev1.ResourceName("nvidia.com/gpu"),
+	}
+	if len(columns) != len(want) {
+		t.Fatalf("columns = %v, want %v", columns, want)
+	}
+	for i := range want {
+		if columns[i] != want[i] {
+			t.Fatalf("columns = %v, want %v", columns, want)
+		}
+	}
+
+	filtered := podResourceColumns(nodeanalysis.RequestsReport{Resources: []nodeanalysis.ResourceUsage{{Resource: corev1.ResourceEphemeralStorage}}})
+	if len(filtered) != 1 || filtered[0] != corev1.ResourceEphemeralStorage {
+		t.Fatalf("filtered columns = %v", filtered)
+	}
+
+	report.TopResource = corev1.ResourceEphemeralStorage
+	topColumns := topConsumerResourceColumns(report)
+	if topColumns[len(topColumns)-1] != corev1.ResourceEphemeralStorage {
+		t.Fatalf("top consumer columns = %v", topColumns)
 	}
 }
 

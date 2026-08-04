@@ -147,24 +147,46 @@ func (writer tableWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.R
 		if _, err := fmt.Fprintf(out, "\nTOP CONSUMERS (%s)\n", report.TopResource); err != nil {
 			return err
 		}
+		resourceColumns := topConsumerResourceColumns(report)
 		consumers := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-		if writer.wide {
-			if _, err := fmt.Fprintf(consumers, "NAMESPACE\tPOD\t%s\tCREATED\tSCHEDULED\tOWNER\tDAEMONSET\n", resourceColumnName(report.TopResource)); err != nil {
+		if _, err := fmt.Fprint(consumers, "NAMESPACE\tPOD\t"); err != nil {
+			return err
+		}
+		for _, name := range resourceColumns {
+			if _, err := fmt.Fprintf(consumers, "%s\t", resourceColumnName(name)); err != nil {
 				return err
 			}
-		} else if _, err := fmt.Fprintf(consumers, "NAMESPACE\tPOD\t%s\tCREATED\tSCHEDULED\tOWNER\n", resourceColumnName(report.TopResource)); err != nil {
+		}
+		if writer.wide {
+			if _, err := fmt.Fprintln(consumers, "CREATED\tSCHEDULED\tOWNER\tDAEMONSET"); err != nil {
+				return err
+			}
+		} else if _, err := fmt.Fprintln(consumers, "CREATED\tSCHEDULED\tOWNER"); err != nil {
 			return err
 		}
 		for _, consumer := range report.Consumers {
 			createdAt := relativeTimeOrDash(report.CapturedAt, consumer.CreatedAt)
 			scheduledAt := relativeTimeOrDash(report.CapturedAt, consumer.ScheduledAt)
+			if _, err := fmt.Fprintf(consumers, "%s\t%s\t", consumer.Namespace, consumer.Pod); err != nil {
+				return err
+			}
+			for _, name := range resourceColumns {
+				usage, found := findResourceUsage(consumer.Resources, name)
+				cell := "-"
+				if found {
+					cell = compactPodResourceCell(usage, false)
+				}
+				if _, err := fmt.Fprintf(consumers, "%s\t", cell); err != nil {
+					return err
+				}
+			}
 			if writer.wide {
-				if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%s\t%s\t%s\t%t\n", consumer.Namespace, consumer.Pod, consumer.Request.String(), createdAt, scheduledAt, consumer.Owner, consumer.DaemonSet); err != nil {
+				if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%t\n", createdAt, scheduledAt, consumer.Owner, consumer.DaemonSet); err != nil {
 					return err
 				}
 				continue
 			}
-			if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%s\t%s\t%s\n", consumer.Namespace, consumer.Pod, consumer.Request.String(), createdAt, scheduledAt, consumer.Owner); err != nil {
+			if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\n", createdAt, scheduledAt, consumer.Owner); err != nil {
 				return err
 			}
 		}
@@ -209,55 +231,144 @@ func (writer tableWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.R
 }
 
 func (writer tableWriter) writePodResources(out io.Writer, report nodeanalysis.RequestsReport) error {
-	if _, err := fmt.Fprintln(out, "\nPOD RESOURCES"); err != nil {
+	title := "\nPOD RESOURCES (REQUEST, NODE-RATIO)"
+	if writer.wide {
+		title = "\nPOD RESOURCES (REQUEST/LIMIT, NODE-RATIO)"
+	}
+	if _, err := fmt.Fprintln(out, title); err != nil {
 		return err
 	}
+	resourceColumns := podResourceColumns(report)
 	table := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprint(table, "NAMESPACE\tPOD\t"); err != nil {
+		return err
+	}
 	if writer.wide {
-		if _, err := fmt.Fprintln(table, "NAMESPACE\tPOD\tUID\tCREATED\tSCHEDULED\tRESOURCE\tREQUEST\tLIMIT\tNODE-RATIO\tOWNER\tDAEMONSET"); err != nil {
+		if _, err := fmt.Fprint(table, "UID\t"); err != nil {
 			return err
 		}
-	} else if _, err := fmt.Fprintln(table, "NAMESPACE\tPOD\tCREATED\tSCHEDULED\tRESOURCE\tREQUEST\tLIMIT\tNODE-RATIO\tOWNER"); err != nil {
+	}
+	for _, name := range resourceColumns {
+		if _, err := fmt.Fprintf(table, "%s\t", resourceColumnName(name)); err != nil {
+			return err
+		}
+	}
+	if writer.wide {
+		if _, err := fmt.Fprintln(table, "CREATED\tSCHEDULED\tOWNER\tDAEMONSET"); err != nil {
+			return err
+		}
+	} else if _, err := fmt.Fprintln(table, "CREATED\tSCHEDULED\tOWNER"); err != nil {
 		return err
 	}
+
 	for _, pod := range report.PodResources {
 		createdAt := relativeTimeOrDash(report.CapturedAt, pod.CreatedAt)
 		scheduledAt := relativeTimeOrDash(report.CapturedAt, pod.ScheduledAt)
-		if len(pod.Resources) == 0 {
-			if writer.wide {
-				if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t-\t-\t-\t-\t%s\t%t\n", pod.Namespace, pod.Pod, pod.UID, createdAt, scheduledAt, pod.Owner, pod.DaemonSet); err != nil {
-					return err
-				}
-				continue
+		if _, err := fmt.Fprintf(table, "%s\t%s\t", pod.Namespace, pod.Pod); err != nil {
+			return err
+		}
+		if writer.wide {
+			if _, err := fmt.Fprintf(table, "%s\t", pod.UID); err != nil {
+				return err
 			}
-			if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t-\t-\t-\t-\t%s\n", pod.Namespace, pod.Pod, createdAt, scheduledAt, pod.Owner); err != nil {
+		}
+		for _, name := range resourceColumns {
+			resource, found := findPodResource(pod, name)
+			cell := "-"
+			if found {
+				cell = compactPodResourceCell(resource, writer.wide)
+			}
+			if _, err := fmt.Fprintf(table, "%s\t", cell); err != nil {
+				return err
+			}
+		}
+		if writer.wide {
+			if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%t\n", createdAt, scheduledAt, pod.Owner, pod.DaemonSet); err != nil {
 				return err
 			}
 			continue
 		}
-		for _, resource := range pod.Resources {
-			request, limit, ratio := "-", "-", "-"
-			if resource.RequestSet {
-				request = resource.Request.String()
-			}
-			if resource.LimitSet {
-				limit = resource.Limit.String()
-			}
-			if resource.RatioKnown {
-				ratio = fmt.Sprintf("%.1f%%", resource.RequestRatio)
-			}
-			if writer.wide {
-				if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%t\n", pod.Namespace, pod.Pod, pod.UID, createdAt, scheduledAt, resource.Resource, request, limit, ratio, pod.Owner, pod.DaemonSet); err != nil {
-					return err
-				}
-				continue
-			}
-			if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", pod.Namespace, pod.Pod, createdAt, scheduledAt, resource.Resource, request, limit, ratio, pod.Owner); err != nil {
-				return err
-			}
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\n", createdAt, scheduledAt, pod.Owner); err != nil {
+			return err
 		}
 	}
 	return table.Flush()
+}
+
+func podResourceColumns(report nodeanalysis.RequestsReport) []corev1.ResourceName {
+	if len(report.Resources) == 1 {
+		return []corev1.ResourceName{report.Resources[0].Resource}
+	}
+	seen := make(map[corev1.ResourceName]bool)
+	columns := make([]corev1.ResourceName, 0)
+	add := func(name corev1.ResourceName) {
+		if seen[name] {
+			return
+		}
+		seen[name] = true
+		columns = append(columns, name)
+	}
+	for _, usage := range report.Resources {
+		if usage.Resource == corev1.ResourceCPU || usage.Resource == corev1.ResourceMemory {
+			add(usage.Resource)
+		}
+	}
+	for _, usage := range report.Resources {
+		if strings.Contains(string(usage.Resource), "/") {
+			add(usage.Resource)
+		}
+	}
+	for _, pod := range report.PodResources {
+		for _, usage := range pod.Resources {
+			if strings.Contains(string(usage.Resource), "/") {
+				add(usage.Resource)
+			}
+		}
+	}
+	return columns
+}
+
+func topConsumerResourceColumns(report nodeanalysis.RequestsReport) []corev1.ResourceName {
+	columns := podResourceColumns(report)
+	for _, name := range columns {
+		if name == report.TopResource {
+			return columns
+		}
+	}
+	return append(columns, report.TopResource)
+}
+
+func findPodResource(pod nodeanalysis.PodResourceBreakdown, name corev1.ResourceName) (nodeanalysis.PodResource, bool) {
+	return findResourceUsage(pod.Resources, name)
+}
+
+func findResourceUsage(resources []nodeanalysis.PodResource, name corev1.ResourceName) (nodeanalysis.PodResource, bool) {
+	for _, usage := range resources {
+		if usage.Resource == name {
+			return usage, true
+		}
+	}
+	return nodeanalysis.PodResource{}, false
+}
+
+func compactPodResourceCell(usage nodeanalysis.PodResource, wide bool) string {
+	request, limit, ratio := "-", "-", "-"
+	if usage.RequestSet {
+		request = usage.Request.String()
+	}
+	if usage.LimitSet {
+		limit = usage.Limit.String()
+	}
+	if usage.RatioKnown {
+		ratio = fmt.Sprintf("%.1f%%", usage.RequestRatio)
+	}
+	if wide {
+		return fmt.Sprintf("%s/%s (%s)", request, limit, ratio)
+	}
+	if !usage.RequestSet {
+		return "-"
+	}
+	return fmt.Sprintf("%s (%s)", request, ratio)
 }
 
 func resourceColumnName(name corev1.ResourceName) string {

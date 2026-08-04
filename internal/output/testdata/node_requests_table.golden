@@ -1,7 +1,9 @@
-RESOURCE  ALLOCATABLE  REQUESTED  AVAILABLE  RATIO
-cpu       4            1          3          25.0%
-pods      10           2          8          20.0%
+RESOURCE        ALLOCATABLE  REQUESTED  AVAILABLE  RATIO
+cpu             4            1          3          25.0%
+memory          8Gi          1Gi        7Gi        12.5%
+pods            10           2          8          20.0%
+nvidia.com/gpu  2            1          1          50.0%
 
 TOP CONSUMERS (cpu)
-NAMESPACE   POD  CPU   CREATED  SCHEDULED  OWNER
-production  api  750m  10m ago  9m ago     ReplicaSet/api-7d8f
+NAMESPACE   POD  CPU           MEMORY       nvidia.com/gpu  CREATED  SCHEDULED  OWNER
+production  api  750m (18.8%)  1Gi (12.5%)  1 (50.0%)       10m ago  9m ago     ReplicaSet/api-7d8f
