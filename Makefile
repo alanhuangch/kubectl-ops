@@ -3,6 +3,8 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 BINARY := kubectl-ops
+COMPLETION_BINARY := kubectl_complete-ops
+COMPLETION_SCRIPT := $(CURDIR)/scripts/$(COMPLETION_BINARY)
 GO ?= go
 INSTALL ?= install
 OUTPUT_DIR ?= $(CURDIR)/bin
@@ -65,7 +67,7 @@ help:
 	@echo "  make lint       Run gofmt, go vet, and shell syntax checks"
 	@echo "  make test       Run unit tests with race detection and coverage"
 	@echo "  make build      Build $(BINARY_PATH)"
-	@echo "  make install    Install $(BINARY) into INSTALL_DIR ($(INSTALL_DIR))"
+	@echo "  make install    Install the plugin and completion adapter into INSTALL_DIR ($(INSTALL_DIR))"
 	@echo "  make check      Run all non-E2E CI checks"
 	@echo "  make e2e        Create a kind cluster, test, and clean it up"
 	@echo "  make e2e-test   Test against an existing E2E kind cluster"
@@ -86,6 +88,7 @@ build:
 install: build
 	$(INSTALL) -d "$(DESTDIR)$(INSTALL_DIR)"
 	$(INSTALL) -m 0755 "$(BINARY_PATH)" "$(DESTDIR)$(INSTALL_DIR)/$(BINARY)"
+	$(INSTALL) -m 0755 "$(COMPLETION_SCRIPT)" "$(DESTDIR)$(INSTALL_DIR)/$(COMPLETION_BINARY)"
 
 test:
 	$(GO) test -race -covermode=atomic -coverprofile="$(COVERAGE_FILE)" $(GO_TEST_FLAGS) $(GO_PACKAGES)
@@ -96,6 +99,7 @@ coverage: test
 lint:
 	$(GO) vet $(GO_PACKAGES)
 	test -z "$$(gofmt -l $$(find . -name '*.go' -not -path './vendor/*'))"
+	sh -n "$(COMPLETION_SCRIPT)"
 	bash -n test/e2e/*.sh
 
 fmt:

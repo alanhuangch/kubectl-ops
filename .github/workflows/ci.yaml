@@ -55,6 +55,7 @@ jobs:
             COMMIT="${GITHUB_SHA::12}" \
             INSTALL_DIR="${RUNNER_TEMP}/kubectl-ops/bin"
           "${RUNNER_TEMP}/kubectl-ops/bin/kubectl-ops" version -o json
+          "${RUNNER_TEMP}/kubectl-ops/bin/kubectl_complete-ops" node "" | grep -Fq requests
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:

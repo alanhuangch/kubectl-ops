@@ -43,7 +43,16 @@ make install
 kubectl ops version
 ```
 
-Use `make install INSTALL_DIR=/custom/bin` to select another destination.
+The install target also installs `kubectl_complete-ops`, which lets kubectl
+delegate shell completion to the plugin. Use
+`make install INSTALL_DIR=/custom/bin` to select another destination. For a
+`kl=kubectl` Zsh alias, load and bind kubectl completion in `.zshrc`:
+
+```zsh
+source <(kubectl completion zsh)
+alias kl=kubectl
+compdef _kubectl kl
+```
 
 Run the kind E2E suite for `pod recent`, `pod restarts`, and `node requests`:
 
