@@ -135,11 +135,13 @@ func TestNodeRequestWritersMatchGoldenFiles(t *testing.T) {
 		},
 		TopResource: corev1.ResourceCPU,
 		Consumers: []nodeanalysis.Consumer{{
-			Namespace: "production",
-			Pod:       "api",
-			UID:       "uid-1",
-			Request:   resource.MustParse("750m"),
-			Owner:     "ReplicaSet/api-7d8f",
+			Namespace:   "production",
+			Pod:         "api",
+			UID:         "uid-1",
+			CreatedAt:   time.Date(2026, time.July, 30, 9, 50, 0, 0, time.UTC),
+			ScheduledAt: time.Date(2026, time.July, 30, 9, 51, 0, 0, time.UTC),
+			Request:     resource.MustParse("750m"),
+			Owner:       "ReplicaSet/api-7d8f",
 		}},
 		Warnings: []string{},
 	}
@@ -149,6 +151,7 @@ func TestNodeRequestWritersMatchGoldenFiles(t *testing.T) {
 		golden string
 	}{
 		{name: "table", format: FormatTable, golden: "node_requests_table.golden"},
+		{name: "wide", format: FormatWide, golden: "node_requests_wide.golden"},
 		{name: "json", format: FormatJSON, golden: "node_requests_json.golden"},
 	}
 	for _, test := range tests {
@@ -196,14 +199,17 @@ func TestNodeRequestExtendedWritersMatchGoldenFiles(t *testing.T) {
 		ExtendedConsumers: []nodeanalysis.ExtendedResourceConsumer{
 			{
 				Resource: "example.com/fpga", Namespace: "media", Pod: "encoder-0", UID: "uid-fpga",
+				CreatedAt: time.Date(2026, time.July, 30, 9, 30, 0, 0, time.UTC), ScheduledAt: time.Date(2026, time.July, 30, 9, 31, 0, 0, time.UTC),
 				Request: resource.MustParse("1"), Owner: "StatefulSet/encoder",
 			},
 			{
 				Resource: "nvidia.com/gpu", Namespace: "training", Pod: "model-a", UID: "uid-gpu-a",
+				CreatedAt: time.Date(2026, time.July, 30, 9, 40, 0, 0, time.UTC), ScheduledAt: time.Date(2026, time.July, 30, 9, 42, 0, 0, time.UTC),
 				Request: resource.MustParse("2"), Owner: "Job/model-a",
 			},
 			{
 				Resource: "nvidia.com/gpu", Namespace: "kube-system", Pod: "gpu-agent", UID: "uid-gpu-agent",
+				CreatedAt: time.Date(2026, time.July, 30, 8, 0, 0, 0, time.UTC), ScheduledAt: time.Date(2026, time.July, 30, 8, 0, 5, 0, time.UTC),
 				Request: resource.MustParse("1"), Owner: "DaemonSet/gpu-agent", DaemonSet: true,
 			},
 		},
@@ -267,7 +273,9 @@ func TestNodeRequestPodResourcesWritersMatchGoldenFiles(t *testing.T) {
 		PodResourcesKnown: true,
 		PodResources: []nodeanalysis.PodResourceBreakdown{
 			{
-				Namespace: "production", Pod: "api", UID: "uid-api", Owner: "ReplicaSet/api-7d8f",
+				Namespace: "production", Pod: "api", UID: "uid-api",
+				CreatedAt: time.Date(2026, time.July, 30, 9, 50, 0, 0, time.UTC), ScheduledAt: time.Date(2026, time.July, 30, 9, 51, 0, 0, time.UTC),
+				Owner: "ReplicaSet/api-7d8f",
 				Resources: []nodeanalysis.PodResource{
 					{
 						Resource: corev1.ResourceCPU, Request: resource.MustParse("500m"), Limit: resource.MustParse("1"),
@@ -284,7 +292,9 @@ func TestNodeRequestPodResourcesWritersMatchGoldenFiles(t *testing.T) {
 				},
 			},
 			{
-				Namespace: "system", Pod: "best-effort", UID: "uid-best-effort", Owner: "DaemonSet/best-effort", DaemonSet: true,
+				Namespace: "system", Pod: "best-effort", UID: "uid-best-effort",
+				CreatedAt: time.Date(2026, time.July, 30, 9, 0, 0, 0, time.UTC),
+				Owner:     "DaemonSet/best-effort", DaemonSet: true,
 				Resources: []nodeanalysis.PodResource{},
 			},
 		},

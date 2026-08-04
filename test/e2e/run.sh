@@ -103,13 +103,13 @@ assert_json "${restarts_json}" '.items | any(.pod == "restart-pod" and .containe
 echo "Checking node requests..."
 requests_json="$("${E2E_BIN}" node requests "${worker_node}" --resource cpu --top 50 -o json)"
 assert_json "${requests_json}" '.completeness == "Complete" and .source == "CurrentState"' "node requests completeness"
-assert_json "${requests_json}" '.consumers | any(.namespace == "kubectl-ops-e2e" and .pod == "recent-pod" and .request == "250m")' "recent-pod CPU request"
+assert_json "${requests_json}" '.consumers | any(.namespace == "kubectl-ops-e2e" and .pod == "recent-pod" and .request == "250m" and .createdAt != null and .scheduledAt != null)' "recent-pod CPU request and lifecycle times"
 assert_json "${requests_json}" '.consumers | any(.namespace == "kubectl-ops-e2e" and .pod == "restart-pod" and .request == "100m")' "restart-pod CPU request"
 assert_json "${requests_json}" '.resources | any(.resource == "cpu" and .requested != null and .available != null and .ratio != null)' "CPU aggregate is available"
 
 pod_resources_json="$("${E2E_BIN}" node requests "${worker_node}" --pods --top 0 -n "${E2E_NAMESPACE}" -o json)"
 assert_json "${pod_resources_json}" '.namespace == "kubectl-ops-e2e" and ([.resources[].available] | all(. == null))' "namespace-scoped node requests"
-assert_json "${pod_resources_json}" '.podResources | any(.namespace == "kubectl-ops-e2e" and .pod == "recent-pod" and (.resources | any(.resource == "cpu" and .request == "250m")) and (.resources | any(.resource == "memory" and .request == "64Mi")))' "recent-pod resource breakdown"
+assert_json "${pod_resources_json}" '.podResources | any(.namespace == "kubectl-ops-e2e" and .pod == "recent-pod" and .createdAt != null and .scheduledAt != null and (.resources | any(.resource == "cpu" and .request == "250m")) and (.resources | any(.resource == "memory" and .request == "64Mi")))' "recent-pod resource breakdown and lifecycle times"
 
 filtered_resources_json="$("${E2E_BIN}" node requests "${worker_node}" -A --resource cpu --only-resource --pods --top 0 -o json)"
 assert_json "${filtered_resources_json}" '(.resources | length == 1 and .[0].resource == "cpu") and (.podResources | all(.resources | length == 1 and .[0].resource == "cpu"))' "single resource filter"

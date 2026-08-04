@@ -149,20 +149,22 @@ func (writer tableWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.R
 		}
 		consumers := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 		if writer.wide {
-			if _, err := fmt.Fprintf(consumers, "NAMESPACE\tPOD\t%s\tOWNER\tDAEMONSET\n", resourceColumnName(report.TopResource)); err != nil {
+			if _, err := fmt.Fprintf(consumers, "NAMESPACE\tPOD\t%s\tCREATED\tSCHEDULED\tOWNER\tDAEMONSET\n", resourceColumnName(report.TopResource)); err != nil {
 				return err
 			}
-		} else if _, err := fmt.Fprintf(consumers, "NAMESPACE\tPOD\t%s\tOWNER\n", resourceColumnName(report.TopResource)); err != nil {
+		} else if _, err := fmt.Fprintf(consumers, "NAMESPACE\tPOD\t%s\tCREATED\tSCHEDULED\tOWNER\n", resourceColumnName(report.TopResource)); err != nil {
 			return err
 		}
 		for _, consumer := range report.Consumers {
+			createdAt := relativeTimeOrDash(report.CapturedAt, consumer.CreatedAt)
+			scheduledAt := relativeTimeOrDash(report.CapturedAt, consumer.ScheduledAt)
 			if writer.wide {
-				if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%s\t%t\n", consumer.Namespace, consumer.Pod, consumer.Request.String(), consumer.Owner, consumer.DaemonSet); err != nil {
+				if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%s\t%s\t%s\t%t\n", consumer.Namespace, consumer.Pod, consumer.Request.String(), createdAt, scheduledAt, consumer.Owner, consumer.DaemonSet); err != nil {
 					return err
 				}
 				continue
 			}
-			if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%s\n", consumer.Namespace, consumer.Pod, consumer.Request.String(), consumer.Owner); err != nil {
+			if _, err := fmt.Fprintf(consumers, "%s\t%s\t%s\t%s\t%s\t%s\n", consumer.Namespace, consumer.Pod, consumer.Request.String(), createdAt, scheduledAt, consumer.Owner); err != nil {
 				return err
 			}
 		}
@@ -184,20 +186,22 @@ func (writer tableWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.R
 	}
 	extended := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	if writer.wide {
-		if _, err := fmt.Fprintln(extended, "RESOURCE\tNAMESPACE\tPOD\tREQUEST\tOWNER\tDAEMONSET"); err != nil {
+		if _, err := fmt.Fprintln(extended, "RESOURCE\tNAMESPACE\tPOD\tREQUEST\tCREATED\tSCHEDULED\tOWNER\tDAEMONSET"); err != nil {
 			return err
 		}
-	} else if _, err := fmt.Fprintln(extended, "RESOURCE\tNAMESPACE\tPOD\tREQUEST\tOWNER"); err != nil {
+	} else if _, err := fmt.Fprintln(extended, "RESOURCE\tNAMESPACE\tPOD\tREQUEST\tCREATED\tSCHEDULED\tOWNER"); err != nil {
 		return err
 	}
 	for _, consumer := range report.ExtendedConsumers {
+		createdAt := relativeTimeOrDash(report.CapturedAt, consumer.CreatedAt)
+		scheduledAt := relativeTimeOrDash(report.CapturedAt, consumer.ScheduledAt)
 		if writer.wide {
-			if _, err := fmt.Fprintf(extended, "%s\t%s\t%s\t%s\t%s\t%t\n", consumer.Resource, consumer.Namespace, consumer.Pod, consumer.Request.String(), consumer.Owner, consumer.DaemonSet); err != nil {
+			if _, err := fmt.Fprintf(extended, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%t\n", consumer.Resource, consumer.Namespace, consumer.Pod, consumer.Request.String(), createdAt, scheduledAt, consumer.Owner, consumer.DaemonSet); err != nil {
 				return err
 			}
 			continue
 		}
-		if _, err := fmt.Fprintf(extended, "%s\t%s\t%s\t%s\t%s\n", consumer.Resource, consumer.Namespace, consumer.Pod, consumer.Request.String(), consumer.Owner); err != nil {
+		if _, err := fmt.Fprintf(extended, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", consumer.Resource, consumer.Namespace, consumer.Pod, consumer.Request.String(), createdAt, scheduledAt, consumer.Owner); err != nil {
 			return err
 		}
 	}
@@ -210,21 +214,23 @@ func (writer tableWriter) writePodResources(out io.Writer, report nodeanalysis.R
 	}
 	table := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	if writer.wide {
-		if _, err := fmt.Fprintln(table, "NAMESPACE\tPOD\tUID\tRESOURCE\tREQUEST\tLIMIT\tNODE-RATIO\tOWNER\tDAEMONSET"); err != nil {
+		if _, err := fmt.Fprintln(table, "NAMESPACE\tPOD\tUID\tCREATED\tSCHEDULED\tRESOURCE\tREQUEST\tLIMIT\tNODE-RATIO\tOWNER\tDAEMONSET"); err != nil {
 			return err
 		}
-	} else if _, err := fmt.Fprintln(table, "NAMESPACE\tPOD\tRESOURCE\tREQUEST\tLIMIT\tNODE-RATIO\tOWNER"); err != nil {
+	} else if _, err := fmt.Fprintln(table, "NAMESPACE\tPOD\tCREATED\tSCHEDULED\tRESOURCE\tREQUEST\tLIMIT\tNODE-RATIO\tOWNER"); err != nil {
 		return err
 	}
 	for _, pod := range report.PodResources {
+		createdAt := relativeTimeOrDash(report.CapturedAt, pod.CreatedAt)
+		scheduledAt := relativeTimeOrDash(report.CapturedAt, pod.ScheduledAt)
 		if len(pod.Resources) == 0 {
 			if writer.wide {
-				if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t-\t-\t-\t-\t%s\t%t\n", pod.Namespace, pod.Pod, pod.UID, pod.Owner, pod.DaemonSet); err != nil {
+				if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t-\t-\t-\t-\t%s\t%t\n", pod.Namespace, pod.Pod, pod.UID, createdAt, scheduledAt, pod.Owner, pod.DaemonSet); err != nil {
 					return err
 				}
 				continue
 			}
-			if _, err := fmt.Fprintf(table, "%s\t%s\t-\t-\t-\t-\t%s\n", pod.Namespace, pod.Pod, pod.Owner); err != nil {
+			if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t-\t-\t-\t-\t%s\n", pod.Namespace, pod.Pod, createdAt, scheduledAt, pod.Owner); err != nil {
 				return err
 			}
 			continue
@@ -241,12 +247,12 @@ func (writer tableWriter) writePodResources(out io.Writer, report nodeanalysis.R
 				ratio = fmt.Sprintf("%.1f%%", resource.RequestRatio)
 			}
 			if writer.wide {
-				if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%t\n", pod.Namespace, pod.Pod, pod.UID, resource.Resource, request, limit, ratio, pod.Owner, pod.DaemonSet); err != nil {
+				if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%t\n", pod.Namespace, pod.Pod, pod.UID, createdAt, scheduledAt, resource.Resource, request, limit, ratio, pod.Owner, pod.DaemonSet); err != nil {
 					return err
 				}
 				continue
 			}
-			if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", pod.Namespace, pod.Pod, resource.Resource, request, limit, ratio, pod.Owner); err != nil {
+			if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", pod.Namespace, pod.Pod, createdAt, scheduledAt, resource.Resource, request, limit, ratio, pod.Owner); err != nil {
 				return err
 			}
 		}

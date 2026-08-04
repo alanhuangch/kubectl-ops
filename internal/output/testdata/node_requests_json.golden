@@ -25,6 +25,8 @@
       "namespace": "production",
       "pod": "api",
       "uid": "uid-1",
+      "createdAt": "2026-07-30T09:50:00Z",
+      "scheduledAt": "2026-07-30T09:51:00Z",
       "request": "750m",
       "owner": "ReplicaSet/api-7d8f",
       "daemonSet": false

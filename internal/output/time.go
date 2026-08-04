@@ -52,3 +52,10 @@ func relativeTime(now, value time.Time) string {
 	}
 	return humanDuration(delta) + " ago"
 }
+
+func relativeTimeOrDash(now, value time.Time) string {
+	if value.IsZero() {
+		return "-"
+	}
+	return relativeTime(now, value)
+}

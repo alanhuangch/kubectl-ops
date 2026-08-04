@@ -3,5 +3,5 @@ cpu       4            1          3          25.0%
 pods      10           2          8          20.0%
 
 TOP CONSUMERS (cpu)
-NAMESPACE   POD  CPU   CREATED  SCHEDULED  OWNER
-production  api  750m  10m ago  9m ago     ReplicaSet/api-7d8f
+NAMESPACE   POD  CPU   CREATED  SCHEDULED  OWNER                DAEMONSET
+production  api  750m  10m ago  9m ago     ReplicaSet/api-7d8f  false

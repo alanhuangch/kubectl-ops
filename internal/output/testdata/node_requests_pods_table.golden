@@ -4,8 +4,8 @@ memory          8Gi          1Gi        7Gi        12.5%
 nvidia.com/gpu  2            1          1          50.0%
 
 POD RESOURCES
-NAMESPACE   POD          RESOURCE        REQUEST  LIMIT  NODE-RATIO  OWNER
-production  api          cpu             500m     1      12.5%       ReplicaSet/api-7d8f
-production  api          memory          1Gi      2Gi    12.5%       ReplicaSet/api-7d8f
-production  api          nvidia.com/gpu  1        1      50.0%       ReplicaSet/api-7d8f
-system      best-effort  -               -        -      -           DaemonSet/best-effort
+NAMESPACE   POD          CREATED  SCHEDULED  RESOURCE        REQUEST  LIMIT  NODE-RATIO  OWNER
+production  api          10m ago  9m ago     cpu             500m     1      12.5%       ReplicaSet/api-7d8f
+production  api          10m ago  9m ago     memory          1Gi      2Gi    12.5%       ReplicaSet/api-7d8f
+production  api          10m ago  9m ago     nvidia.com/gpu  1        1      50.0%       ReplicaSet/api-7d8f
+system      best-effort  1h ago   -          -               -        -      -           DaemonSet/best-effort

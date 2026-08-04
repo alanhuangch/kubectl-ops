@@ -353,6 +353,8 @@ func TestNodeRequestsShowsExtendedResourceConsumers(t *testing.T) {
 		`"extendedResourceConsumers": [`,
 		`"resource": "nvidia.com/gpu"`,
 		`"pod": "model"`,
+		`"createdAt": "2026-07-30T09:59:00Z"`,
+		`"scheduledAt": "2026-07-30T09:59:30Z"`,
 		`"request": "2"`,
 	} {
 		if !strings.Contains(out.String(), expected) {
@@ -395,6 +397,8 @@ func TestNodeRequestsShowsPodResources(t *testing.T) {
 	}
 	for _, expected := range []string{
 		`"podResources": [`,
+		`"createdAt": "2026-07-30T09:59:00Z"`,
+		`"scheduledAt": "2026-07-30T09:59:30Z"`,
 		`"resource": "memory"`,
 		`"limit": "2Gi"`,
 		`"resource": "nvidia.com/gpu"`,

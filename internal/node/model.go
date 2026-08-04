@@ -26,22 +26,26 @@ type ResourceUsage struct {
 }
 
 type Consumer struct {
-	Namespace string
-	Pod       string
-	UID       string
-	Request   resource.Quantity
-	Owner     string
-	DaemonSet bool
+	Namespace   string
+	Pod         string
+	UID         string
+	CreatedAt   time.Time
+	ScheduledAt time.Time
+	Request     resource.Quantity
+	Owner       string
+	DaemonSet   bool
 }
 
 type ExtendedResourceConsumer struct {
-	Resource  corev1.ResourceName
-	Namespace string
-	Pod       string
-	UID       string
-	Request   resource.Quantity
-	Owner     string
-	DaemonSet bool
+	Resource    corev1.ResourceName
+	Namespace   string
+	Pod         string
+	UID         string
+	CreatedAt   time.Time
+	ScheduledAt time.Time
+	Request     resource.Quantity
+	Owner       string
+	DaemonSet   bool
 }
 
 type PodResource struct {
@@ -55,12 +59,14 @@ type PodResource struct {
 }
 
 type PodResourceBreakdown struct {
-	Namespace string
-	Pod       string
-	UID       string
-	Owner     string
-	DaemonSet bool
-	Resources []PodResource
+	Namespace   string
+	Pod         string
+	UID         string
+	CreatedAt   time.Time
+	ScheduledAt time.Time
+	Owner       string
+	DaemonSet   bool
+	Resources   []PodResource
 }
 
 type RequestsReport struct {

@@ -155,31 +155,37 @@ type nodeResourceJSON struct {
 }
 
 type nodeConsumerJSON struct {
-	Namespace string `json:"namespace"`
-	Pod       string `json:"pod"`
-	UID       string `json:"uid"`
-	Request   string `json:"request"`
-	Owner     string `json:"owner"`
-	DaemonSet bool   `json:"daemonSet"`
+	Namespace   string  `json:"namespace"`
+	Pod         string  `json:"pod"`
+	UID         string  `json:"uid"`
+	CreatedAt   *string `json:"createdAt"`
+	ScheduledAt *string `json:"scheduledAt"`
+	Request     string  `json:"request"`
+	Owner       string  `json:"owner"`
+	DaemonSet   bool    `json:"daemonSet"`
 }
 
 type nodeExtendedConsumerJSON struct {
-	Resource  string `json:"resource"`
-	Namespace string `json:"namespace"`
-	Pod       string `json:"pod"`
-	UID       string `json:"uid"`
-	Request   string `json:"request"`
-	Owner     string `json:"owner"`
-	DaemonSet bool   `json:"daemonSet"`
+	Resource    string  `json:"resource"`
+	Namespace   string  `json:"namespace"`
+	Pod         string  `json:"pod"`
+	UID         string  `json:"uid"`
+	CreatedAt   *string `json:"createdAt"`
+	ScheduledAt *string `json:"scheduledAt"`
+	Request     string  `json:"request"`
+	Owner       string  `json:"owner"`
+	DaemonSet   bool    `json:"daemonSet"`
 }
 
 type nodePodResourcesJSON struct {
-	Namespace string                `json:"namespace"`
-	Pod       string                `json:"pod"`
-	UID       string                `json:"uid"`
-	Owner     string                `json:"owner"`
-	DaemonSet bool                  `json:"daemonSet"`
-	Resources []nodePodResourceJSON `json:"resources"`
+	Namespace   string                `json:"namespace"`
+	Pod         string                `json:"pod"`
+	UID         string                `json:"uid"`
+	CreatedAt   *string               `json:"createdAt"`
+	ScheduledAt *string               `json:"scheduledAt"`
+	Owner       string                `json:"owner"`
+	DaemonSet   bool                  `json:"daemonSet"`
+	Resources   []nodePodResourceJSON `json:"resources"`
 }
 
 type nodePodResourceJSON struct {
@@ -213,12 +219,14 @@ func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsR
 	consumers := make([]nodeConsumerJSON, 0, len(report.Consumers))
 	for _, consumer := range report.Consumers {
 		consumers = append(consumers, nodeConsumerJSON{
-			Namespace: consumer.Namespace,
-			Pod:       consumer.Pod,
-			UID:       consumer.UID,
-			Request:   consumer.Request.String(),
-			Owner:     consumer.Owner,
-			DaemonSet: consumer.DaemonSet,
+			Namespace:   consumer.Namespace,
+			Pod:         consumer.Pod,
+			UID:         consumer.UID,
+			CreatedAt:   optionalTimestamp(consumer.CreatedAt),
+			ScheduledAt: optionalTimestamp(consumer.ScheduledAt),
+			Request:     consumer.Request.String(),
+			Owner:       consumer.Owner,
+			DaemonSet:   consumer.DaemonSet,
 		})
 	}
 	var extendedConsumers *[]nodeExtendedConsumerJSON
@@ -229,13 +237,15 @@ func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsR
 		}
 		for _, consumer := range report.ExtendedConsumers {
 			items = append(items, nodeExtendedConsumerJSON{
-				Resource:  string(consumer.Resource),
-				Namespace: consumer.Namespace,
-				Pod:       consumer.Pod,
-				UID:       consumer.UID,
-				Request:   consumer.Request.String(),
-				Owner:     consumer.Owner,
-				DaemonSet: consumer.DaemonSet,
+				Resource:    string(consumer.Resource),
+				Namespace:   consumer.Namespace,
+				Pod:         consumer.Pod,
+				UID:         consumer.UID,
+				CreatedAt:   optionalTimestamp(consumer.CreatedAt),
+				ScheduledAt: optionalTimestamp(consumer.ScheduledAt),
+				Request:     consumer.Request.String(),
+				Owner:       consumer.Owner,
+				DaemonSet:   consumer.DaemonSet,
 			})
 		}
 		extendedConsumers = &items
@@ -265,12 +275,14 @@ func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsR
 				resources = append(resources, resource)
 			}
 			items = append(items, nodePodResourcesJSON{
-				Namespace: pod.Namespace,
-				Pod:       pod.Pod,
-				UID:       pod.UID,
-				Owner:     pod.Owner,
-				DaemonSet: pod.DaemonSet,
-				Resources: resources,
+				Namespace:   pod.Namespace,
+				Pod:         pod.Pod,
+				UID:         pod.UID,
+				CreatedAt:   optionalTimestamp(pod.CreatedAt),
+				ScheduledAt: optionalTimestamp(pod.ScheduledAt),
+				Owner:       pod.Owner,
+				DaemonSet:   pod.DaemonSet,
+				Resources:   resources,
 			})
 		}
 		podResources = &items
@@ -294,6 +306,14 @@ func (jsonWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.RequestsR
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(payload)
+}
+
+func optionalTimestamp(value time.Time) *string {
+	if value.IsZero() {
+		return nil
+	}
+	formatted := value.UTC().Format(time.RFC3339Nano)
+	return &formatted
 }
 
 type pendingJSONReport struct {

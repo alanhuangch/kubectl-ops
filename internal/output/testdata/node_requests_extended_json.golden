@@ -27,6 +27,8 @@
       "namespace": "media",
       "pod": "encoder-0",
       "uid": "uid-fpga",
+      "createdAt": "2026-07-30T09:30:00Z",
+      "scheduledAt": "2026-07-30T09:31:00Z",
       "request": "1",
       "owner": "StatefulSet/encoder",
       "daemonSet": false
@@ -36,6 +38,8 @@
       "namespace": "training",
       "pod": "model-a",
       "uid": "uid-gpu-a",
+      "createdAt": "2026-07-30T09:40:00Z",
+      "scheduledAt": "2026-07-30T09:42:00Z",
       "request": "2",
       "owner": "Job/model-a",
       "daemonSet": false
@@ -45,6 +49,8 @@
       "namespace": "kube-system",
       "pod": "gpu-agent",
       "uid": "uid-gpu-agent",
+      "createdAt": "2026-07-30T08:00:00Z",
+      "scheduledAt": "2026-07-30T08:00:05Z",
       "request": "1",
       "owner": "DaemonSet/gpu-agent",
       "daemonSet": true

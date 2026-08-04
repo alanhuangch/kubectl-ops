@@ -33,7 +33,7 @@ func newNodeRequestsCommand(root *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "requests NODE",
 		Short: "Show allocatable capacity, Pod requests, and top consumers",
-		Long:  "Compare Node allocatable resources with requests from active assigned Pods. This reports scheduling requests, not live utilization.",
+		Long:  "Compare Node allocatable resources with requests from active assigned Pods. Pod rows include creation time and the PodScheduled transition time. This reports scheduling requests, not live utilization.",
 		Example: `  kubectl ops node requests worker-07
   kubectl ops node requests worker-07 --top 10
   kubectl ops node requests worker-07 --resource memory

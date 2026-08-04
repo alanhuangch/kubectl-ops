@@ -40,9 +40,11 @@ func AnalyzeRequests(item *corev1.Node, pods []corev1.Pod, options RequestsOptio
 
 	requested := corev1.ResourceList{}
 	type podRequest struct {
-		pod      *corev1.Pod
-		requests corev1.ResourceList
-		limits   corev1.ResourceList
+		pod         *corev1.Pod
+		requests    corev1.ResourceList
+		limits      corev1.ResourceList
+		createdAt   time.Time
+		scheduledAt time.Time
 	}
 	activeRequests := make([]podRequest, 0, len(pods))
 	if options.PodsKnown {
@@ -60,7 +62,14 @@ func AnalyzeRequests(item *corev1.Node, pods []corev1.Pod, options RequestsOptio
 			if options.ShowPods {
 				podLimits = resourcehelper.PodLimits(pod, resourcehelper.PodResourcesOptions{})
 			}
-			activeRequests = append(activeRequests, podRequest{pod: pod, requests: podRequests, limits: podLimits})
+			createdAt, scheduledAt := podTimes(pod)
+			activeRequests = append(activeRequests, podRequest{
+				pod:         pod,
+				requests:    podRequests,
+				limits:      podLimits,
+				createdAt:   createdAt,
+				scheduledAt: scheduledAt,
+			})
 			addResourceList(requested, podRequests)
 		}
 		requested[corev1.ResourcePods] = *resource.NewQuantity(activeCount, resource.DecimalSI)
@@ -119,12 +128,14 @@ func AnalyzeRequests(item *corev1.Node, pods []corev1.Pod, options RequestsOptio
 			}
 			owner, daemonSet := podOwner(entry.pod)
 			report.Consumers = append(report.Consumers, Consumer{
-				Namespace: entry.pod.Namespace,
-				Pod:       entry.pod.Name,
-				UID:       string(entry.pod.UID),
-				Request:   quantity.DeepCopy(),
-				Owner:     owner,
-				DaemonSet: daemonSet,
+				Namespace:   entry.pod.Namespace,
+				Pod:         entry.pod.Name,
+				UID:         string(entry.pod.UID),
+				CreatedAt:   entry.createdAt,
+				ScheduledAt: entry.scheduledAt,
+				Request:     quantity.DeepCopy(),
+				Owner:       owner,
+				DaemonSet:   daemonSet,
 			})
 		}
 		sort.Slice(report.Consumers, func(i, j int) bool {
@@ -154,13 +165,15 @@ func AnalyzeRequests(item *corev1.Node, pods []corev1.Pod, options RequestsOptio
 					continue
 				}
 				report.ExtendedConsumers = append(report.ExtendedConsumers, ExtendedResourceConsumer{
-					Resource:  name,
-					Namespace: entry.pod.Namespace,
-					Pod:       entry.pod.Name,
-					UID:       string(entry.pod.UID),
-					Request:   quantity.DeepCopy(),
-					Owner:     owner,
-					DaemonSet: daemonSet,
+					Resource:    name,
+					Namespace:   entry.pod.Namespace,
+					Pod:         entry.pod.Name,
+					UID:         string(entry.pod.UID),
+					CreatedAt:   entry.createdAt,
+					ScheduledAt: entry.scheduledAt,
+					Request:     quantity.DeepCopy(),
+					Owner:       owner,
+					DaemonSet:   daemonSet,
 				})
 			}
 		}
@@ -186,11 +199,13 @@ func AnalyzeRequests(item *corev1.Node, pods []corev1.Pod, options RequestsOptio
 		for _, entry := range activeRequests {
 			owner, daemonSet := podOwner(entry.pod)
 			breakdown := PodResourceBreakdown{
-				Namespace: entry.pod.Namespace,
-				Pod:       entry.pod.Name,
-				UID:       string(entry.pod.UID),
-				Owner:     owner,
-				DaemonSet: daemonSet,
+				Namespace:   entry.pod.Namespace,
+				Pod:         entry.pod.Name,
+				UID:         string(entry.pod.UID),
+				CreatedAt:   entry.createdAt,
+				ScheduledAt: entry.scheduledAt,
+				Owner:       owner,
+				DaemonSet:   daemonSet,
 			}
 			resourceSet := make(map[corev1.ResourceName]struct{}, len(entry.requests)+len(entry.limits))
 			for name, quantity := range entry.requests {
@@ -266,6 +281,18 @@ func addResourceList(target, addition corev1.ResourceList) {
 
 func isTerminalPod(item *corev1.Pod) bool {
 	return item.Status.Phase == corev1.PodSucceeded || item.Status.Phase == corev1.PodFailed
+}
+
+func podTimes(item *corev1.Pod) (time.Time, time.Time) {
+	createdAt := item.CreationTimestamp.Time
+	for _, condition := range item.Status.Conditions {
+		if condition.Type == corev1.PodScheduled &&
+			condition.Status == corev1.ConditionTrue &&
+			!condition.LastTransitionTime.IsZero() {
+			return createdAt, condition.LastTransitionTime.Time
+		}
+	}
+	return createdAt, time.Time{}
 }
 
 func podOwner(item *corev1.Pod) (string, bool) {

@@ -3,7 +3,7 @@ example.com/fpga  2            1          1          50.0%
 nvidia.com/gpu    4            3          1          75.0%
 
 EXTENDED RESOURCE PODS
-RESOURCE          NAMESPACE    POD        REQUEST  OWNER                DAEMONSET
-example.com/fpga  media        encoder-0  1        StatefulSet/encoder  false
-nvidia.com/gpu    training     model-a    2        Job/model-a          false
-nvidia.com/gpu    kube-system  gpu-agent  1        DaemonSet/gpu-agent  true
+RESOURCE          NAMESPACE    POD        REQUEST  CREATED  SCHEDULED  OWNER                DAEMONSET
+example.com/fpga  media        encoder-0  1        30m ago  29m ago    StatefulSet/encoder  false
+nvidia.com/gpu    training     model-a    2        20m ago  18m ago    Job/model-a          false
+nvidia.com/gpu    kube-system  gpu-agent  1        2h ago   2h ago     DaemonSet/gpu-agent  true

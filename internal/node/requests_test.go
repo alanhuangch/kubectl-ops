@@ -90,6 +90,38 @@ func TestAnalyzeRequestsCalculatesKubernetesPodRequests(t *testing.T) {
 	}
 }
 
+func TestAnalyzeRequestsIncludesPodCreationAndSchedulingTimes(t *testing.T) {
+	createdAt := time.Date(2026, time.July, 30, 9, 50, 0, 0, time.UTC)
+	scheduledAt := time.Date(2026, time.July, 30, 9, 51, 0, 0, time.UTC)
+	pod := requestTestPod("production", "api", "worker-07", "100m")
+	pod.CreationTimestamp = metav1.NewTime(createdAt)
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type:               corev1.PodScheduled,
+		Status:             corev1.ConditionTrue,
+		LastTransitionTime: metav1.NewTime(scheduledAt),
+	}}
+	pod.Spec.Containers[0].Resources.Requests[corev1.ResourceName("nvidia.com/gpu")] = resource.MustParse("1")
+
+	report := AnalyzeRequests(requestTestNode("worker-07"), []corev1.Pod{pod}, RequestsOptions{
+		Now:          time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC),
+		Top:          1,
+		TopResource:  corev1.ResourceCPU,
+		PodsKnown:    true,
+		ShowExtended: true,
+		ShowPods:     true,
+	})
+
+	if len(report.Consumers) != 1 || !report.Consumers[0].CreatedAt.Equal(createdAt) || !report.Consumers[0].ScheduledAt.Equal(scheduledAt) {
+		t.Fatalf("unexpected top consumer times: %#v", report.Consumers)
+	}
+	if len(report.ExtendedConsumers) != 1 || !report.ExtendedConsumers[0].CreatedAt.Equal(createdAt) || !report.ExtendedConsumers[0].ScheduledAt.Equal(scheduledAt) {
+		t.Fatalf("unexpected extended consumer times: %#v", report.ExtendedConsumers)
+	}
+	if len(report.PodResources) != 1 || !report.PodResources[0].CreatedAt.Equal(createdAt) || !report.PodResources[0].ScheduledAt.Equal(scheduledAt) {
+		t.Fatalf("unexpected Pod resource times: %#v", report.PodResources)
+	}
+}
+
 func TestAnalyzeRequestsReturnsPartialWithoutPods(t *testing.T) {
 	report := AnalyzeRequests(requestTestNode("worker-07"), nil, RequestsOptions{
 		Now:         time.Now(),
