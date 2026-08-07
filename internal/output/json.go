@@ -11,6 +11,7 @@ import (
 	"github.com/alanhuangch/kubectl-ops/internal/pending"
 	"github.com/alanhuangch/kubectl-ops/internal/pod"
 	"github.com/alanhuangch/kubectl-ops/internal/rollout"
+	workloadanalysis "github.com/alanhuangch/kubectl-ops/internal/workload"
 )
 
 type jsonWriter struct{}
@@ -320,6 +321,173 @@ func optionalTimestamp(value time.Time) *string {
 	}
 	formatted := value.UTC().Format(time.RFC3339Nano)
 	return &formatted
+}
+
+type workloadResourcesJSONReport struct {
+	CapturedAt        string                     `json:"capturedAt"`
+	Namespace         string                     `json:"namespace,omitempty"`
+	Source            string                     `json:"source"`
+	PlannedDefinition string                     `json:"plannedDefinition"`
+	ActualDefinition  string                     `json:"actualDefinition"`
+	Completeness      string                     `json:"completeness"`
+	ResourceClass     string                     `json:"resourceClass"`
+	Items             []workloadResourceJSONItem `json:"items"`
+	Warnings          []string                   `json:"warnings"`
+}
+
+type workloadResourceJSONItem struct {
+	Namespace string                    `json:"namespace"`
+	Kind      string                    `json:"kind"`
+	Workload  string                    `json:"workload"`
+	UID       string                    `json:"uid"`
+	Pods      workloadPodCountsJSON     `json:"pods"`
+	Resources workloadResourcesJSON     `json:"resources"`
+	Placement workloadNodePlacementJSON `json:"nodePlacement"`
+}
+
+type workloadPodCountsJSON struct {
+	Planned int32 `json:"planned"`
+	Actual  *int  `json:"actual"`
+}
+
+type workloadResourcesJSON struct {
+	CPU    workloadResourcePairJSON `json:"cpu"`
+	Memory workloadResourcePairJSON `json:"memory"`
+	GPUs   []workloadGPUJSON        `json:"gpus"`
+}
+
+type workloadResourcePairJSON struct {
+	Planned string  `json:"planned"`
+	Actual  *string `json:"actual"`
+}
+
+type workloadGPUJSON struct {
+	Resource string  `json:"resource"`
+	Planned  string  `json:"planned"`
+	Actual   *string `json:"actual"`
+}
+
+type workloadNodePlacementJSON struct {
+	NodeSelector map[string]string                   `json:"nodeSelector"`
+	Required     []workloadNodeSelectorTermJSON      `json:"required"`
+	Preferred    []workloadPreferredSelectorTermJSON `json:"preferred"`
+}
+
+type workloadPreferredSelectorTermJSON struct {
+	Weight     int32                        `json:"weight"`
+	Preference workloadNodeSelectorTermJSON `json:"preference"`
+}
+
+type workloadNodeSelectorTermJSON struct {
+	MatchExpressions []workloadNodeSelectorRequirementJSON `json:"matchExpressions"`
+	MatchFields      []workloadNodeSelectorRequirementJSON `json:"matchFields"`
+}
+
+type workloadNodeSelectorRequirementJSON struct {
+	Key      string   `json:"key"`
+	Operator string   `json:"operator"`
+	Values   []string `json:"values"`
+}
+
+func (jsonWriter) WriteWorkloadResources(out io.Writer, report workloadanalysis.Report) error {
+	payload := workloadResourcesJSONReport{
+		CapturedAt:        report.CapturedAt.UTC().Format(time.RFC3339Nano),
+		Namespace:         report.Namespace,
+		Source:            "PodRequests",
+		PlannedDefinition: "Workload-specific desired concurrent Pods multiplied by current Pod template requests; CronJob plans are per run",
+		ActualDefinition:  "Active Pods represented by or owned by the reported workload and assigned to a Node",
+		Completeness:      string(report.Completeness),
+		ResourceClass:     string(report.ResourceClass),
+		Items:             make([]workloadResourceJSONItem, 0, len(report.Items)),
+		Warnings:          append([]string(nil), report.Warnings...),
+	}
+	if payload.Warnings == nil {
+		payload.Warnings = []string{}
+	}
+	for _, item := range report.Items {
+		entry := workloadResourceJSONItem{
+			Namespace: item.Namespace,
+			Kind:      string(item.Kind),
+			Workload:  item.Workload,
+			UID:       item.UID,
+			Pods: workloadPodCountsJSON{
+				Planned: item.Pods.Planned,
+			},
+			Resources: workloadResourcesJSON{
+				CPU:    workloadResourcePairJSON{Planned: item.CPU.Planned.String()},
+				Memory: workloadResourcePairJSON{Planned: item.Memory.Planned.String()},
+				GPUs:   make([]workloadGPUJSON, 0, len(item.GPUs)),
+			},
+			Placement: workloadPlacementJSON(item.Placement),
+		}
+		if item.Pods.ActualKnown {
+			actual := item.Pods.Actual
+			entry.Pods.Actual = &actual
+		}
+		if item.CPU.ActualKnown {
+			actual := item.CPU.Actual.String()
+			entry.Resources.CPU.Actual = &actual
+		}
+		if item.Memory.ActualKnown {
+			actual := item.Memory.Actual.String()
+			entry.Resources.Memory.Actual = &actual
+		}
+		for _, gpu := range item.GPUs {
+			resource := workloadGPUJSON{Resource: string(gpu.Resource), Planned: gpu.Planned.String()}
+			if gpu.ActualKnown {
+				actual := gpu.Actual.String()
+				resource.Actual = &actual
+			}
+			entry.Resources.GPUs = append(entry.Resources.GPUs, resource)
+		}
+		payload.Items = append(payload.Items, entry)
+	}
+	encoder := json.NewEncoder(out)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(payload)
+}
+
+func workloadPlacementJSON(item workloadanalysis.NodePlacement) workloadNodePlacementJSON {
+	result := workloadNodePlacementJSON{
+		NodeSelector: make(map[string]string, len(item.NodeSelector)),
+		Required:     make([]workloadNodeSelectorTermJSON, 0, len(item.Required)),
+		Preferred:    make([]workloadPreferredSelectorTermJSON, 0, len(item.Preferred)),
+	}
+	for _, selector := range item.NodeSelector {
+		result.NodeSelector[selector.Key] = selector.Value
+	}
+	for _, term := range item.Required {
+		result.Required = append(result.Required, workloadTermJSON(term))
+	}
+	for _, preferred := range item.Preferred {
+		result.Preferred = append(result.Preferred, workloadPreferredSelectorTermJSON{
+			Weight:     preferred.Weight,
+			Preference: workloadTermJSON(preferred.Preference),
+		})
+	}
+	return result
+}
+
+func workloadTermJSON(item workloadanalysis.NodeSelectorTerm) workloadNodeSelectorTermJSON {
+	result := workloadNodeSelectorTermJSON{
+		MatchExpressions: make([]workloadNodeSelectorRequirementJSON, 0, len(item.MatchExpressions)),
+		MatchFields:      make([]workloadNodeSelectorRequirementJSON, 0, len(item.MatchFields)),
+	}
+	for _, requirement := range item.MatchExpressions {
+		result.MatchExpressions = append(result.MatchExpressions, workloadRequirementJSON(requirement))
+	}
+	for _, requirement := range item.MatchFields {
+		result.MatchFields = append(result.MatchFields, workloadRequirementJSON(requirement))
+	}
+	return result
+}
+
+func workloadRequirementJSON(item workloadanalysis.NodeSelectorRequirement) workloadNodeSelectorRequirementJSON {
+	values := append([]string(nil), item.Values...)
+	if values == nil {
+		values = []string{}
+	}
+	return workloadNodeSelectorRequirementJSON{Key: item.Key, Operator: string(item.Operator), Values: values}
 }
 
 type pendingJSONReport struct {

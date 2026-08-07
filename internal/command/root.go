@@ -69,6 +69,8 @@ func newRootCommand(streams genericclioptions.IOStreams, deps dependencies) *cob
 
 	cmd.AddCommand(newPodCommand(options))
 	cmd.AddCommand(newNodeCommand(options))
+	cmd.AddCommand(newDeploymentCommand(options))
+	cmd.AddCommand(newWorkloadCommand(options))
 	cmd.AddCommand(newEventsCommand(options))
 	cmd.AddCommand(newRolloutCommand(options))
 	cmd.AddCommand(newVersionCommand(options))

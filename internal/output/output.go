@@ -10,6 +10,7 @@ import (
 	"github.com/alanhuangch/kubectl-ops/internal/pending"
 	"github.com/alanhuangch/kubectl-ops/internal/pod"
 	"github.com/alanhuangch/kubectl-ops/internal/rollout"
+	workloadanalysis "github.com/alanhuangch/kubectl-ops/internal/workload"
 )
 
 const (
@@ -22,6 +23,7 @@ type Writer interface {
 	WriteRecent(io.Writer, pod.RecentReport) error
 	WriteRestarts(io.Writer, pod.RestartReport) error
 	WriteNodeRequests(io.Writer, nodeanalysis.RequestsReport) error
+	WriteWorkloadResources(io.Writer, workloadanalysis.Report) error
 	WriteNodeDrainCheck(io.Writer, drain.Report) error
 	WritePending(io.Writer, pending.Report) error
 	WriteEventsTimeline(io.Writer, timeline.Report) error

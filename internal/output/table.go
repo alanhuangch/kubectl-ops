@@ -13,6 +13,7 @@ import (
 	"github.com/alanhuangch/kubectl-ops/internal/pending"
 	"github.com/alanhuangch/kubectl-ops/internal/pod"
 	"github.com/alanhuangch/kubectl-ops/internal/rollout"
+	workloadanalysis "github.com/alanhuangch/kubectl-ops/internal/workload"
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -228,6 +229,158 @@ func (writer tableWriter) WriteNodeRequests(out io.Writer, report nodeanalysis.R
 		}
 	}
 	return extended.Flush()
+}
+
+func (writer tableWriter) WriteWorkloadResources(out io.Writer, report workloadanalysis.Report) error {
+	table := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+	if writer.wide {
+		if _, err := fmt.Fprintln(table, "NAMESPACE\tKIND\tWORKLOAD\tUID\tPODS(PLAN/ACTUAL)\tCPU-REQUESTS(PLAN/ACTUAL)\tMEMORY-REQUESTS(PLAN/ACTUAL)\tGPU-REQUESTS(PLAN/ACTUAL)\tNODE-SELECTOR\tREQUIRED-NODE-AFFINITY\tPREFERRED-NODE-AFFINITY"); err != nil {
+			return err
+		}
+	} else if _, err := fmt.Fprintln(table, "NAMESPACE\tKIND\tWORKLOAD\tPODS(PLAN/ACTUAL)\tCPU-REQUESTS(PLAN/ACTUAL)\tMEMORY-REQUESTS(PLAN/ACTUAL)\tGPU-REQUESTS(PLAN/ACTUAL)\tNODE-AFFINITY"); err != nil {
+		return err
+	}
+	for _, item := range report.Items {
+		pods := fmt.Sprintf("%d/-", item.Pods.Planned)
+		if item.Pods.ActualKnown {
+			pods = fmt.Sprintf("%d/%d", item.Pods.Planned, item.Pods.Actual)
+		}
+		cpu := workloadResourcePairCell(item.CPU)
+		memory := workloadResourcePairCell(item.Memory)
+		gpus := workloadGPUCell(item.GPUs, item.CPU.ActualKnown)
+		if writer.wide {
+			if _, err := fmt.Fprintf(
+				table,
+				"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+				item.Namespace,
+				item.Kind,
+				item.Workload,
+				item.UID,
+				pods,
+				cpu,
+				memory,
+				gpus,
+				formatNodeSelector(item.Placement.NodeSelector),
+				formatRequiredNodeAffinity(item.Placement.Required),
+				formatPreferredNodeAffinity(item.Placement.Preferred),
+			); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := fmt.Fprintf(
+			table,
+			"%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			item.Namespace,
+			item.Kind,
+			item.Workload,
+			pods,
+			cpu,
+			memory,
+			gpus,
+			formatNodePlacement(item.Placement),
+		); err != nil {
+			return err
+		}
+	}
+	return table.Flush()
+}
+
+func workloadResourcePairCell(item workloadanalysis.ResourcePair) string {
+	if !item.ActualKnown {
+		return item.Planned.String() + "/-"
+	}
+	return item.Planned.String() + "/" + item.Actual.String()
+}
+
+func workloadGPUCell(items []workloadanalysis.GPUResourcePair, actualKnown bool) string {
+	if len(items) == 0 {
+		if !actualKnown {
+			return "0/-"
+		}
+		return "-"
+	}
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		value := item.Planned.String() + "/-"
+		if item.ActualKnown {
+			value = item.Planned.String() + "/" + item.Actual.String()
+		}
+		values = append(values, string(item.Resource)+"="+value)
+	}
+	return strings.Join(values, ",")
+}
+
+func formatNodePlacement(item workloadanalysis.NodePlacement) string {
+	var sections []string
+	if value := formatNodeSelector(item.NodeSelector); value != "-" {
+		sections = append(sections, "selector: "+value)
+	}
+	if value := formatRequiredNodeAffinity(item.Required); value != "-" {
+		sections = append(sections, "required: "+value)
+	}
+	if value := formatPreferredNodeAffinity(item.Preferred); value != "-" {
+		sections = append(sections, "preferred: "+value)
+	}
+	if len(sections) == 0 {
+		return "-"
+	}
+	return strings.Join(sections, "; ")
+}
+
+func formatNodeSelector(items []workloadanalysis.KeyValue) string {
+	if len(items) == 0 {
+		return "-"
+	}
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		values = append(values, item.Key+"="+item.Value)
+	}
+	return strings.Join(values, ",")
+}
+
+func formatRequiredNodeAffinity(items []workloadanalysis.NodeSelectorTerm) string {
+	if len(items) == 0 {
+		return "-"
+	}
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		values = append(values, "("+formatNodeSelectorTerm(item)+")")
+	}
+	return strings.Join(values, " OR ")
+}
+
+func formatPreferredNodeAffinity(items []workloadanalysis.PreferredNodeSelectorTerm) string {
+	if len(items) == 0 {
+		return "-"
+	}
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		values = append(values, fmt.Sprintf("%d:(%s)", item.Weight, formatNodeSelectorTerm(item.Preference)))
+	}
+	return strings.Join(values, ", ")
+}
+
+func formatNodeSelectorTerm(item workloadanalysis.NodeSelectorTerm) string {
+	values := make([]string, 0, len(item.MatchExpressions)+len(item.MatchFields))
+	for _, requirement := range item.MatchExpressions {
+		values = append(values, formatNodeSelectorRequirement(requirement, ""))
+	}
+	for _, requirement := range item.MatchFields {
+		values = append(values, formatNodeSelectorRequirement(requirement, "field:"))
+	}
+	if len(values) == 0 {
+		return "<empty>"
+	}
+	return strings.Join(values, " AND ")
+}
+
+func formatNodeSelectorRequirement(item workloadanalysis.NodeSelectorRequirement, prefix string) string {
+	value := prefix + item.Key + " " + string(item.Operator)
+	if len(item.Values) > 0 {
+		value += " [" + strings.Join(item.Values, ",") + "]"
+	}
+	return value
 }
 
 func (writer tableWriter) writePodResources(out io.Writer, report nodeanalysis.RequestsReport) error {

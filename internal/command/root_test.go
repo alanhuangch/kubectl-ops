@@ -708,6 +708,184 @@ func TestRolloutExplainCorrelatesDeploymentResources(t *testing.T) {
 	}
 }
 
+func TestDeploymentResourcesReportsPlannedAndActualRequests(t *testing.T) {
+	now := time.Date(2026, time.August, 7, 10, 0, 0, 0, time.UTC)
+	replicas := int32(2)
+	controller := true
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "production", Name: "trainer", UID: types.UID("deployment-uid"), Labels: map[string]string{"team": "ml"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "trainer"}},
+			Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+				NodeSelector: map[string]string{"pool": "gpu"},
+				Affinity: &corev1.Affinity{NodeAffinity: &corev1.NodeAffinity{
+					RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{NodeSelectorTerms: []corev1.NodeSelectorTerm{{
+						MatchExpressions: []corev1.NodeSelectorRequirement{{
+							Key: "topology.kubernetes.io/zone", Operator: corev1.NodeSelectorOpIn, Values: []string{"zone-a"},
+						}},
+					}}},
+				}},
+				Containers: []corev1.Container{{Name: "trainer", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("1"), corev1.ResourceMemory: resource.MustParse("2Gi"),
+					corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("2"),
+				}}}},
+			}},
+		},
+	}
+	replicaSet := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "production", Name: "trainer-rs", UID: types.UID("rs-uid"),
+		OwnerReferences: []metav1.OwnerReference{{Kind: "Deployment", Name: "trainer", UID: deployment.UID, Controller: &controller}},
+	}}
+	pod := commandTestPod("production", "trainer-1", "worker-gpu", map[string]string{"app": "trainer"}, now)
+	pod.OwnerReferences = []metav1.OwnerReference{{Kind: "ReplicaSet", Name: replicaSet.Name, UID: replicaSet.UID, Controller: &controller}}
+	pod.Spec.Containers = []corev1.Container{*deployment.Spec.Template.Spec.Containers[0].DeepCopy()}
+	client := fake.NewClientset(deployment, replicaSet, pod)
+	var deploymentNamespace, deploymentSelector, replicaSetNamespace, podNamespace string
+	client.PrependReactor("list", "deployments", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		deploymentNamespace = action.GetNamespace()
+		deploymentSelector = action.(clienttesting.ListAction).GetListRestrictions().Labels.String()
+		return false, nil, nil
+	})
+	client.PrependReactor("list", "replicasets", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		replicaSetNamespace = action.GetNamespace()
+		return false, nil, nil
+	})
+	client.PrependReactor("list", "pods", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		podNamespace = action.GetNamespace()
+		return false, nil, nil
+	})
+
+	var out, errOut bytes.Buffer
+	cmd := newRootCommand(genericclioptions.IOStreams{Out: &out, ErrOut: &errOut}, dependencies{
+		clientFactory: func() (kubernetes.Interface, error) { return client, nil },
+		now:           func() time.Time { return now },
+	})
+	cmd.SetArgs([]string{"deployment", "resources", "-A", "-l", "team=ml", "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if deploymentNamespace != metav1.NamespaceAll || replicaSetNamespace != metav1.NamespaceAll || podNamespace != metav1.NamespaceAll {
+		t.Fatalf("namespaces = deployment %q, ReplicaSet %q, Pod %q", deploymentNamespace, replicaSetNamespace, podNamespace)
+	}
+	if deploymentSelector != "team=ml" {
+		t.Fatalf("Deployment selector = %q", deploymentSelector)
+	}
+	for _, expected := range []string{
+		`"kind": "Deployment"`, `"workload": "trainer"`, `"planned": 2`, `"actual": 1`,
+		`"planned": "4"`, `"actual": "2"`, `"pool": "gpu"`, `"operator": "In"`,
+	} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("output does not contain %q: %s", expected, out.String())
+		}
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected stderr: %s", errOut.String())
+	}
+}
+
+func TestDeploymentResourcesMarksActualUnknownWhenReplicaSetsAreForbidden(t *testing.T) {
+	replicas := int32(2)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "production", Name: "api", UID: types.UID("deployment-uid")},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "api", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")}},
+			}}}},
+		},
+	}
+	client := fake.NewClientset(deployment)
+	client.PrependReactor("list", "replicasets", func(clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Group: appsv1.GroupName, Resource: "replicasets"}, "", nil)
+	})
+
+	var out, errOut bytes.Buffer
+	cmd := newRootCommand(genericclioptions.IOStreams{Out: &out, ErrOut: &errOut}, dependencies{
+		clientFactory: func() (kubernetes.Interface, error) { return client, nil },
+	})
+	cmd.SetArgs([]string{"deployment", "resources", "-n", "production", "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`"completeness": "Partial"`, `"planned": "1"`, `"actual": null`,
+		"ReplicaSet resources are unavailable because they could not be listed.",
+	} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("output does not contain %q: %s", expected, out.String())
+		}
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("JSON warnings must stay in the JSON document: %s", errOut.String())
+	}
+}
+
+func TestWorkloadResourcesFiltersGPUAcrossWorkloadKinds(t *testing.T) {
+	now := time.Date(2026, time.August, 7, 10, 0, 0, 0, time.UTC)
+	controller := true
+	deploymentReplicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "production", Name: "api", UID: types.UID("deployment-uid")},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &deploymentReplicas,
+			Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{
+				Name: "api", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")}},
+			}}}},
+		},
+	}
+	replicaSet := &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{
+		Namespace: "production", Name: "api-rs", UID: types.UID("rs-uid"),
+		OwnerReferences: []metav1.OwnerReference{{Kind: "Deployment", UID: deployment.UID, Controller: &controller}},
+	}}
+	statefulReplicas := int32(3)
+	statefulSet := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "training", Name: "trainer", UID: types.UID("statefulset-uid")},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas: &statefulReplicas,
+			Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+				NodeSelector: map[string]string{"pool": "gpu"},
+				Containers: []corev1.Container{{Name: "trainer", Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("2"), corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("2"),
+				}}}},
+			}},
+		},
+	}
+	apiPod := commandTestPod("production", "api-1", "worker-cpu", nil, now)
+	apiPod.OwnerReferences = []metav1.OwnerReference{{Kind: "ReplicaSet", UID: replicaSet.UID, Controller: &controller}}
+	apiPod.Spec.Containers = []corev1.Container{*deployment.Spec.Template.Spec.Containers[0].DeepCopy()}
+	trainerPod := commandTestPod("training", "trainer-0", "worker-gpu", nil, now)
+	trainerPod.OwnerReferences = []metav1.OwnerReference{{Kind: "StatefulSet", UID: statefulSet.UID, Controller: &controller}}
+	trainerPod.Spec.Containers = []corev1.Container{*statefulSet.Spec.Template.Spec.Containers[0].DeepCopy()}
+	client := fake.NewClientset(deployment, replicaSet, statefulSet, apiPod, trainerPod)
+
+	var out, errOut bytes.Buffer
+	cmd := newRootCommand(genericclioptions.IOStreams{Out: &out, ErrOut: &errOut}, dependencies{
+		clientFactory: func() (kubernetes.Interface, error) { return client, nil },
+		now:           func() time.Time { return now },
+	})
+	cmd.SetArgs([]string{"workload", "resources", "-A", "--resource-class", "gpu", "-o", "json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`"resourceClass": "gpu"`, `"kind": "StatefulSet"`, `"workload": "trainer"`,
+		`"planned": 3`, `"actual": 1`, `"planned": "6"`, `"actual": "2"`,
+	} {
+		if !strings.Contains(out.String(), expected) {
+			t.Fatalf("output does not contain %q: %s", expected, out.String())
+		}
+	}
+	if strings.Contains(out.String(), `"workload": "api"`) {
+		t.Fatalf("CPU-only Deployment must be excluded by the GPU filter: %s", out.String())
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected stderr: %s", errOut.String())
+	}
+}
+
 func TestRolloutExplainDegradesWhenReplicaSetsAreForbidden(t *testing.T) {
 	now := time.Date(2026, time.July, 30, 10, 0, 0, 0, time.UTC)
 	replicas := int32(1)
